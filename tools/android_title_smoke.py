@@ -3,8 +3,10 @@
 from io import BytesIO
 import os
 from pathlib import Path
+import re
 import subprocess
 import time
+import xml.etree.ElementTree as ET
 
 from PIL import Image
 
@@ -58,6 +60,29 @@ def report_visible(image):
                for r,g,b in center.getdata()) > 200
 
 
+def dismiss_launcher_anr(image):
+    # Some Google API images raise a system dialog for Pixel Launcher at boot.
+    # A game ANR must remain on screen and fail this test.
+    w,h = image.size
+    center = image.crop((int(w*.3),int(h*.25),int(w*.7),int(h*.75))).resize((20,20))
+    if sum(min(rgb) > 210 for rgb in center.getdata()) < 230:
+        return False
+    path = "/data/local/tmp/qa-foreground.xml"
+    if "dumped" not in shell("uiautomator","dump",path).lower():
+        return False
+    nodes = list(ET.fromstring(shell("cat",path)).iter("node"))
+    if not any("pixel launcher" in n.get("text","").lower() and "responding" in n.get("text","").lower() for n in nodes):
+        return False
+    button = next((n for n in nodes if n.get("resource-id") == "android:id/aerr_close" or n.get("text") == "Close app"),None)
+    if button is None:
+        return False
+    x1,y1,x2,y2 = map(int,re.findall(r"\d+",button.attrib["bounds"]))
+    shell("input","tap",(x1+x2)//2,(y1+y2)//2)
+    print("Dismissed confirmed Pixel Launcher ANR; game retained its process")
+    time.sleep(1)
+    return True
+
+
 def wait_screen(directory, name, matches):
     deadline = time.monotonic()+65
     missing_since = None
@@ -65,6 +90,8 @@ def wait_screen(directory, name, matches):
         image = screenshot(directory, name)
         if matches(image):
             return image
+        if dismiss_launcher_anr(image):
+            continue
         pid = subprocess.run(["adb","shell","pidof",PACKAGE], capture_output=True, timeout=10)
         if pid.stdout.strip():
             missing_since = None
@@ -99,6 +126,8 @@ def exercise(tag, candidate):
             assert any(PACKAGE in line and ("topResumedActivity" in line or "mResumedActivity" in line)
                        for line in focus.splitlines()), "Lost foreground"
             image = screenshot(directory, f"idle-{second}s")
+            if not primary_button(image) and dismiss_launcher_anr(image):
+                image = screenshot(directory, f"idle-{second}s")
             assert primary_button(image), f"Title disappeared at {second}s"
             print(tag, "title in foreground", second, "seconds, pid", pid)
         if candidate:
@@ -121,6 +150,7 @@ def exercise(tag, candidate):
         (directory / "exit-info.txt").write_text(shell("dumpsys","activity","exit-info",PACKAGE))
     if candidate:
         assert b"SCRIPT ERROR:" not in logs, "Godot script error; see logcat"
+        assert ("ANR in "+PACKAGE).encode() not in logs, "Game ANR; see logcat"
 
 
 def main():
