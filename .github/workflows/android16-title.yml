@@ -1,0 +1,72 @@
+name: Android 16 title smoke test
+run-name: Android 16 startup · ${{ inputs.release }}
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Android release tag to install
+        required: true
+        default: android-0.1.1
+      baseline:
+        description: Optional earlier Android release for comparison
+        default: android-0.1.0
+
+permissions:
+  contents: read
+
+jobs:
+  boot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      RELEASE: ${{ inputs.release }}
+      BASELINE: ${{ inputs.baseline }}
+      IMAGE: system-images;android-36;google_apis;x86_64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install API 36 system image
+        run: |
+          mkdir -p results downloads
+          sudo chmod a+rw /dev/kvm
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          "$SDKMANAGER" "emulator" "platform-tools" "$IMAGE"
+          echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd -n api36 -k "$IMAGE" -d pixel_6
+          python3 -m venv "$RUNNER_TEMP/qa-python"
+          "$RUNNER_TEMP/qa-python/bin/pip" -q install pillow
+      - name: Download the published APKs and verify their digests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for tag in "$BASELINE" "$RELEASE"; do
+            if [[ -z "$tag" ]]; then continue; fi
+            [[ "$tag" =~ ^android-[0-9]+\.[0-9]+\.[0-9]+$ ]]
+            asset=StarrailLegacy-Android.apk
+            digest=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --jq '.assets[] | select(.name == "StarrailLegacy-Android.apk") | .digest')
+            [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+            gh release download "$tag" -R "$GITHUB_REPOSITORY" -p "$asset" -D "downloads/$tag" --clobber
+            echo "${digest#sha256:}  downloads/$tag/$asset" | sha256sum -c -
+            echo "$tag $digest" >> results/builds.txt
+          done
+      - name: Boot Android 16 and exercise the installed releases
+        run: |
+          export PATH="$ANDROID_HOME/platform-tools:$PATH"
+          "$ANDROID_HOME/emulator/emulator" -avd api36 -no-window -no-audio -no-boot-anim -no-snapshot -accel on -gpu swiftshader_indirect -cores 2 -memory 3072 > results/emulator.log 2>&1 &
+          emulator_pid=$!
+          trap 'kill "$emulator_pid" 2>/dev/null || true' EXIT
+          timeout 360 bash -c 'adb wait-for-device; until [[ "$(adb shell getprop sys.boot_completed | tr -d "\r")" == "1" ]]; do sleep 2; done'
+          adb shell input keyevent KEYCODE_WAKEUP
+          adb shell wm dismiss-keyguard
+          adb shell settings put global window_animation_scale 0
+          adb shell settings put global transition_animation_scale 0
+          adb shell settings put global animator_duration_scale 0
+          adb shell wm size 720x1280
+          "$RUNNER_TEMP/qa-python/bin/python" -u tools/android_title_smoke.py
+      - name: Upload screens, exit records and device logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android16-startup-${{ github.run_id }}-${{ github.run_attempt }}
+          path: results/
+          retention-days: 14
