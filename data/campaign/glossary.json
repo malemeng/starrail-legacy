@@ -1,0 +1,103 @@
+{
+  "op": {
+    "title": "装配点（OP）",
+    "body": "同一艘舰上，挂载武器、电容和散热共用舰体的装配点预算。卸下一门炮会释放它占用的点数。",
+    "links": [
+      "mount",
+      "flux",
+      "vent"
+    ]
+  },
+  "mount": {
+    "title": "挂点与射界",
+    "body": "每个炮位有类型、尺寸、朝向和可旋转角度。炮位位于船体图上的实心标记处；点击可查看射界。",
+    "links": [
+      "op",
+      "armor",
+      "shield"
+    ]
+  },
+  "flux": {
+    "title": "幅能",
+    "body": "护盾承受实弹会积累硬幅能，舰炮开火积累软幅能。总量达到上限时舰船过载。",
+    "links": [
+      "shield",
+      "vent",
+      "op"
+    ]
+  },
+  "shield": {
+    "title": "方向性护盾",
+    "body": "伤害只有落在已展开的护盾弧内才由护盾承受。从弧外进入的弹丸直接命中船体。",
+    "links": [
+      "armor",
+      "flux",
+      "mount"
+    ]
+  },
+  "armor": {
+    "title": "局部装甲",
+    "body": "命中点周围的装甲单元先承受伤害。持续攻击相同部位会打开缺口，之后的命中更容易伤及结构。",
+    "links": [
+      "shield",
+      "mount"
+    ]
+  },
+  "vent": {
+    "title": "主动排散",
+    "body": "按 V 让武器和护盾暂时离线，同时排出软硬幅能。离敌越近，这段暴露时间越危险。",
+    "links": [
+      "flux",
+      "shield",
+      "armor"
+    ]
+  },
+  "reservation": {
+    "title": "运输预留",
+    "body": "船长承接运输时，来源港留出库存，目的港同时留下仓位。失船或超时会解除预留。",
+    "links": [
+      "storage",
+      "construction"
+    ]
+  },
+  "storage": {
+    "title": "仓储类型",
+    "body": "固体、液体和集装货各有仓容。同类货占用同一批仓位，建筑专仓单独登记。",
+    "links": [
+      "construction",
+      "reservation"
+    ]
+  },
+  "construction": {
+    "title": "施工仓",
+    "body": "项目从专仓领用建材。玩家卸货或给运输舰下达施工补给单，都可推动工地开工。",
+    "links": [
+      "storage",
+      "reservation"
+    ]
+  },
+  "stress": {
+    "title": "压力",
+    "body": "违背性格的抉择会积累压力。达到 100、200、300 时会经历不同等级的崩溃。",
+    "links": [
+      "personality",
+      "secret"
+    ]
+  },
+  "personality": {
+    "title": "性格",
+    "body": "贪欲、荣誉、同情等倾向影响事件权重和角色压力。同一项决定可能给不同船长带来不同后果。",
+    "links": [
+      "stress",
+      "secret"
+    ]
+  },
+  "secret": {
+    "title": "秘密和把柄",
+    "body": "调查有秘密的同港角色并完成计谋即可获得把柄。使用把柄会改变目标的立场。",
+    "links": [
+      "personality",
+      "stress"
+    ]
+  }
+}

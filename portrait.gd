@@ -19,13 +19,47 @@ var sprite: Texture2D
 var look: Dictionary = {}:
 	set(value):
 		look = value
-		sprite = ImageTexture.create_from_image(Pixels.portrait(look))
+		sprite = Pixels.portrait_texture(look)
 		queue_redraw()
+
+static func for_actor(world, actor: Dictionary) -> Dictionary:
+	var result: Dictionary = actor.look.duplicate()
+	var flag := int(actor.get("flag",-1))
+	var faction: Dictionary = world.factions.get(flag,{})
+	var day := int(actor.get("death_day",world.day))
+	var days_old := maxi(0,day-int(actor.birth))
+	var years := floori(days_old / 360.0)
+	result.actor_id = int(actor.id)
+	result.age_band = 2 if years >= 65 else (1 if years >= 50 else 0)
+	result.stress_tier = clampi(int(actor.get("stress",0))/100,0,3)
+	result.wounded = int(actor.get("injured_until",-1)) >= day
+	result.low_health = float(actor.get("health",1.0)) <= 0.35 or days_old >= int(actor.get("lifespan",9999999))-360
+	result.regalia = actor.get("noble",false) and faction.get("leader",0) == actor.id
+	var culture := str(actor.get("culture",""))
+	var house := str(actor.get("house",""))
+	result.crest = (hash([culture,house]) & 63) | 1 if not culture.is_empty() or not house.is_empty() else -1
+	if not faction.is_empty():
+		result.uniform_style = int(faction.get("style",0))
+		result.uniform = flag if flag >= 0 and flag < 8 else posmod(int(faction.get("regime",0))+2*result.uniform_style,8)
+		result.uniform_color = str(faction.get("color",Pixels.COAT_TRIM[result.uniform]))
+	return result
 
 static func random_look(rng: RandomNumberGenerator) -> Dictionary:
 	var result := {}
 	for key in OPTIONS:
 		result[key] = rng.randi_range(0, OPTIONS[key].size() - 1)
+	return result
+
+static func random_look_for_gender(rng: RandomNumberGenerator, gender: int) -> Dictionary:
+	var result := random_look(rng)
+	if gender == 1:
+		result.face = [0, 2, 3][rng.randi_range(0, 2)]
+		result.cut = [1, 2, 4, 2, 4][rng.randi_range(0, 4)]
+		result.mouth = [1, 2, 2][rng.randi_range(0, 2)]
+	else:
+		result.face = [0, 1, 2][rng.randi_range(0, 2)]
+		result.cut = [0, 1, 3, 5, 0][rng.randi_range(0, 4)]
+		result.mouth = [0, 1][rng.randi_range(0, 1)]
 	return result
 
 static func inherit(first: Dictionary, second: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
@@ -41,11 +75,12 @@ static func inherit(first: Dictionary, second: Dictionary, rng: RandomNumberGene
 func _ready() -> void:
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	if sprite == null:
-		sprite = ImageTexture.create_from_image(Pixels.portrait(look))
+		sprite = Pixels.portrait_texture(look)
 
 func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), Color("142232"))
-	var factor := minf(size.x / 64.0, size.y / 72.0)
-	var dimensions := Vector2(64, 72) * factor
 	if sprite != null:
+		var source_size := sprite.get_size()
+		var factor := minf(size.x / source_size.x, size.y / source_size.y)
+		var dimensions := source_size * factor
 		draw_texture_rect(sprite, Rect2(((size - dimensions) * 0.5).floor(), dimensions), false)

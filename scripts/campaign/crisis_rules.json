@@ -1,0 +1,5 @@
+{
+  "mining": {"threshold": 80, "recovery_days": 120, "encounter": ["hive_unit","standoff_unit"], "range": 300},
+  "swarm": {"factory": "fabricator_unit", "miner": "warden", "output": ["skirmish_unit","assault_unit","overseer_unit"], "ore": 18, "silicon": 6, "energy": 9, "fleet_cap": 5,"miner_units_per_day":42},
+  "blockade": {"asset_threshold": 18000, "grace_days": 30, "mandate_days": 180, "fee": 750, "max_ships": 3,"hyperspace_units_per_day":40,"patrol_units_per_day":60}
+}

@@ -1,0 +1,28 @@
+{
+  "id": "waypost",
+  "hulls": [{
+    "id": "waypost.dispatch",
+    "base": "beacon_ff",
+    "name": "驿鸥级接驳艇",
+    "role": "近域快递 / 小型客运",
+    "paint": "e6a455",
+    "stats": {"cargo": 52, "hp": 85, "speed": 1.13, "recipe": 17},
+    "combat": {"armor": 24, "op": 16},
+    "mounts": [
+      {"id":"bay_01", "offset":[2.5,-2.2], "facing":-35, "arc":140, "size":2, "family":"hybrid", "type":"炮塔", "stock":"rail_00", "group":1},
+      {"id":"aft_pd", "offset":[-8,-2.5], "facing":170, "arc":150, "size":1, "family":"builtin", "type":"炮塔", "stock":"pd", "group":3}
+    ]
+  }],
+  "events": [
+    {"id": "waypost.bearings", "hook": "dock", "title": "最后一套轴承", "body": "码头拖轮队的升降架停摆，领班来借一套备用轴承。",
+      "yes": "垫付零件款", "no": "留给自己的船", "effect": "aid", "weight": 3},
+    {"id": "waypost.timing", "on_action": "on_hyperspace_jump", "title": "迟到的信标", "body": "一枚导航信标的回波慢了半拍。轮机员想截取数据，查清偏差。",
+      "base_weight": 3, "cooldown_days": 120,
+      "weight_multipliers": [{"condition":{"wild_system":true}, "factor":2}],
+      "options": [
+        {"label":"按学识校正时差", "requires":{"stat_gte":{"learning":9}}, "effects":{"experience":10,"merit":2}},
+        {"label":"花 ¢12 把记录转给引航站", "effects":{"credit":-12,"prestige":2}},
+        {"label":"按原航线前进", "response":"decline"}
+      ]}
+  ]
+}

@@ -4,14 +4,19 @@
 
 | 文件 | 单格 | 自左到右、再从上到下 |
 | --- | --- | --- |
-| `hulls.png` | 64×40 | 六列，按舰船目录顺序排列；前九格是信标、渡鸦、锋针、石吻、钩灯、戍星、井脊、长夜、远岸，随后是 11 个舰体系列各四款；舰首朝右 |
+| `fleet_scale.png` | 920×320 | 船坞的同尺度比较，依次为信标、渡鸦、戍星和长夜 |
+| `hulls.png` | 178×116 图集格 | 原装 175 舰按目录排成十列，舰首朝右。所有船使用同一世界比例 0.65，可直接比较舰体长宽。前九格依次为信标、渡鸦、锋针、石吻、钩灯、戍星、井脊、长夜、远岸 |
 | `station_parts.png` | 32×32 | 核心、泊位、储罐、桁架；三行配色 |
 | `station_examples.png` | 80×72 | 采矿、精炼、船厂、防务四种已拼装站体 |
 | `dock_props.png` | 32×24 | 货柜、终端、罐体、航标；三行配色 |
-| `portrait_examples.png` | 64×72 | 四种组合示例；人物脸型、肤色、眼睛、头发、服饰等由同一分层绘制函数组合 |
+| `portrait_examples.png` | 128×144 | 四列两行。从左至右依次展示边防军、共和国、诸侯领、商会、企业领、公社、舰团、守护领的制服。诸侯与守护领示例有领袖礼装，舰团示例有战伤绷带 |
 | `effects.png` | 24×24 | 尾焰、火花、护盾三行；每行四帧 |
 | `orbit_0–2.png` | 320×180 | 蓝弧巨行星、铁尘碎岩带、青雾边界 |
 | `bay_0–2.png` | 320×180 | 自由港、矿业机库、舰队泊位 |
 | `pixel_preview.png` | 960×626 | 拼装与游戏场景预览 |
 
-修改 `pixel_art.gd` 后从工程目录运行 `godot --headless --path . --script art/export_pixels.gd` 导出。
+舰体按护卫舰、驱逐舰、巡洋舰、主力舰四档生成原生底图，分辨率依次为 80×56、112×80、152×108、208×144。每种船的命中轮廓、绘制偏移、舰炮位置和引擎坐标取自 `data/fleet/fleet.json`。战场、船坞和图鉴读取同一套舰体数据。调整 `data/fleet/size_classes.json` 的舰级比例后，运行 `python tools/design_fleet.py` 会同步重算轮廓、炮位、引擎和盾心。在有显示设备的环境中运行 `godot --path . --script tests/hull_scale.gd -- --capture` 会重绘比例图。
+
+人物基因继续决定五官、肤色和发型。人物、家谱与港口对话会读取角色当天的年龄、派系色、派系风格、家族文化、贵族领袖身份、压力和受伤期限。五十岁起出现银发和皱纹，六十五岁后进一步加深。中立角色穿创角选择的服装。
+
+在工程目录运行 `godot --headless --path . --script art/export_pixels.gd` 可重新导出。运行 `godot --headless --path . --script tools/verify_portraits.gd` 可核对人物状态与制服。运行 `godot --headless --path . --script tools/verify_fleet.gd` 可核对内置舰表、轮廓与预设。

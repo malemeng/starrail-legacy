@@ -162,7 +162,26 @@ Pass 8: 战术 HUD 与世界空间 UI (Target Brackets + Flux Bars + Tactical Ov
   * **海盗与自由船长**: 杂乱的皮革/旧宇航服混搭、明显伤疤、粗糙移植的红光义眼。
 * **多尺度复用性**: 所有立绘在绘制时即确保在 `128×128` 甚至 `48×48` 的 UI 缩略框中依然能通过轮廓、帽饰与高饱和度点缀色（如红义眼、金肩章）实现一眼识别。
 
-#### 1.5.1 立绘资产生成与视觉一致性规范 (Agent Prompt & Asset Spec)
+#### 1.5.1 官方立绘与叙事插画视觉参考（David Baumgart 原作）
+![远行星号官方角色立绘矩阵（游戏内实装比例与霸主/速子/联盟风格）](images/starsector/portrait_game_scale.jpg)
+*图 1-1：David Baumgart 绘制的游戏内角色立绘合集（体现硬边厚涂笔触、暗色背景与高饱和度局部点缀色）。*
+
+![远行星号海盗与雇佣兵立绘](images/starsector/portrait_pirates_mercs.jpg)
+*图 1-2：海盗与自由雇佣兵派系立绘（粗糙义体、伤疤、非制式宇航服与暗红/暖橙危险侧光）。*
+
+![远行星号卢德教会与英仙座联盟立绘](images/starsector/portrait_luddic.jpg)
+*图 1-3：卢德教会/左径派系立绘（粗麻兜帽、苦行材质与宗教符号）。*
+
+![远行星号空间站酒吧叙事插画](images/starsector/illus_space_bar.jpg)
+*图 1-4：空间站酒吧（Space Bar）事件插画——冷色全息光幕与暖橙工业背景的冷暖对冲构图。*
+
+![远行星号古代星门遗迹插画](images/starsector/illus_gate.jpg)
+*图 1-5：古代领域星门（Domain Gate）事件插画——巨构尺度的压迫感与深空微弱点光源。*
+
+![远行星号轨道饱和轰炸插画](images/starsector/illus_bombardment_saturation.jpg)
+*图 1-6：饱和轰炸（Saturation Bombardment）叙事插画——低明度剪影与高对比度火光爆发。*
+
+#### 1.5.2 立绘资产生成与视觉一致性规范 (Agent Prompt & Asset Spec)
 若 AI Agent 需要批量生成或筛选符合《远行星号》世界观的角色立绘，应强制注入以下视觉约束：
 * **构图与视角**: 胸部以上半身特写（Bust-up Portrait），轻微三七侧脸（3/4 Profile），背景为失焦的暗色舱壁、金属桁架或微弱全息栅格，严禁出现纯白或高饱和度风景背景。
 * **材质与笔触**: 保持可见的厚涂硬边笔触（Painterly Digital Impasto），皮肤纹理带有疲惫感、油污或伤痕，金属义体呈现哑光钛合金或磨损黄铜质感，避免现代光滑塑料感。
@@ -218,6 +237,15 @@ Pass 8: 战术 HUD 与世界空间 UI (Target Brackets + Flux Bars + Tactical Ov
 | **主动幅散 (`Venting`)** | 散热口喷射高速青白蒸汽粒子流，护盾熄灭 | 持续高压气体泄压嘶鸣声（提示敌我双方处于脆弱窗口） |
 | **辐能过载 (`Overload`)** | 舰体表面随机爆出紫红色失控电弧与故障火花 | 刺耳的电路短路爆音与系统下线降调电子音 |
 | **主力舰殉爆 (`Capital Explosion`)** | 多次次级闪白爆炸 -> 扩张冲击波环 -> 断舰残骸 | 延迟抵达的低频深空爆轰声 + 强力屏幕震动 |
+
+#### 1.7.2 实时战斗画面与本地视觉参考图库索引
+![远行星号实时战术海战实机截图](images/starsector/gameplay_rps_combat.jpg)
+*图 1-7：实机战术海战画面——直观展示 2D 俯视角舰船剪影、青色护盾弧、光束与粒子 Additive 混合、敌我瞄准框及左下角状态面板的语义色彩分层。*
+
+> **本地已归档视觉参考资产目录 (`docs/images/starsector/`)**：
+> - 立绘图集：`portrait_game_scale.jpg`、`portrait_pirates_mercs.jpg`、`portrait_luddic.jpg`、`portrait_league.jpg`、`portrait_alpha_centauri.jpg`、`portrait_sebestyen.jpg`
+> - 叙事事件插画：`illus_space_bar.jpg`、`illus_gate.jpg`、`illus_bombardment_saturation.jpg`、`illus_survey1.jpg`、`illus_eochu_bres.jpg`、`illus_bar_hegemony.jpg`
+> - 战斗实机参考：`gameplay_rps_combat.jpg`
 
 ---
 

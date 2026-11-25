@@ -1,0 +1,9 @@
+*.obj
+*.lib
+*.exp
+*.pdb
+*.ilk
+*.lnk
+.sconsign.dblite
+.build/
+~*.dll

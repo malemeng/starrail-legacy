@@ -1,0 +1,10 @@
+{
+  "standard": ["pulse", "rail", "howitzer", "missile", "pd"],
+  "heavy": ["lance"],
+  "heavy_modules": ["yard", "defense"],
+  "light_mount_limit": 2,
+  "refresh_days": 30,
+  "rotation_count": {"regular": 6, "yard": 10, "black": 10},
+  "pricing": {"per_op": 14, "per_mount_size": 16, "variant_multiplier": 1.25,
+    "black_multiplier": 1.12, "trade_in": 0.65, "minimum": 10}
+}

@@ -2,12 +2,6 @@ extends RefCounted
 
 const Pixels = preload("res://art/pixel_art.gd")
 const Hulls = preload("res://hull_catalog.gd")
-const ENVIRONMENTS := ["蓝弧轨道", "铁尘矿带", "青雾边界"]
-const ENV_DESCRIPTIONS := [
-	"一座不问来历的自由港悬在蓝色巨行星上空。旧帝国留下的泊位灯仍按原来的节奏闪烁。",
-	"碎岩拖出长长的橙色反光。中立采矿站卖原矿，炉心转运站等着下一批原料。",
-	"青色电离云遮住远方信标。这里已不是中立空域，靠港前最好确认对方的旗帜。",
-]
 const SHIP_TEXT := [
 	"短轴轻艇。老式翼形散热片很好修，舱位有限，但适合独立飞行员摸清一条新航线。",
 	"箱式散货船。宽腹货架适合装矿石和整箱合金；发动机推得动满载的货，却追不上轻快的船。",
@@ -26,9 +20,6 @@ const PORT_TEXT := [
 	"泊位灯在瞭望窗上投下一道红线。每艘船靠港前都要先报识别码。",
 ]
 
-static func variation(system_index: int) -> int:
-	return posmod(system_index, ENVIRONMENTS.size())
-
 static func ship(model: int) -> Texture2D:
 	return Pixels.ship_texture(model, Color(Hulls.MODELS[model].paint))
 
@@ -38,11 +29,8 @@ static func hull_description(model: int) -> String:
 	var spec: Dictionary = Hulls.MODELS[model]
 	return "%s。最低船员 %d，采掘 %d，推进倍率 %.2f。" % [spec.role,Hulls.crew_limits(model).x,spec.mine,spec.speed]
 
-static func orbit(index: int) -> Texture2D:
-	return Pixels.backdrop_texture(variation(index))
-
 static func face(look: Dictionary) -> Texture2D:
-	return ImageTexture.create_from_image(Pixels.portrait(look))
+	return Pixels.portrait_texture(look)
 
 static func fill(texture: Texture2D, target: Control) -> TextureRect:
 	var picture := TextureRect.new()

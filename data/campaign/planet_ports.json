@@ -1,0 +1,7 @@
+{
+  "yard": {"title":"造船港", "module":"yard", "population":760, "stock":{"alloy":135,"hull_parts":90,"electronics":52,"fuel":95}},
+  "settlement": {"title":"聚居港", "module":"habitat", "population":920, "stock":{"food_med":210,"water":220,"fuel":76}},
+  "mine": {"title":"矿业港", "module":"mine", "population":270, "stock":{"ore":168,"silicon":96,"alloy":26,"fuel":48}},
+  "refinery": {"title":"冶炼港", "module":"refinery", "population":420, "stock":{"ore":34,"alloy":110,"hull_parts":65,"fuel":58}},
+  "gas": {"title":"浮空采气港", "module":"chemical", "population":180, "stock":{"gas_h2":170,"ice":74,"water":82,"fuel":153}}
+}

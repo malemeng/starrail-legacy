@@ -1,0 +1,9 @@
+import os
+from pathlib import Path
+
+sdk = Path(os.environ["GODOT_CPP"]).resolve()
+ARGUMENTS["build_profile"] = str(Path("profile.json").resolve())
+env = SConscript(str(sdk / "SConstruct"))
+obj = env.SharedObject(".build/fleet_collision", source="fleet_collision.cpp")
+library = env.SharedLibrary(".build/fleet_collision", source=obj)
+Default(env.InstallAs("fleet_collision.dll", library[0]))

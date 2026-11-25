@@ -1,0 +1,23 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/refit_blueprint.gd" id="1"]
+
+[node name="RefitBench" type="HBoxContainer"]
+theme_override_constants/separation = 14
+
+[node name="Plan" type="VBoxContainer" parent="."]
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.8
+
+[node name="Blueprint" type="Control" parent="Plan"]
+clip_contents = true
+custom_minimum_size = Vector2(246, 228)
+size_flags_vertical = 3
+script = ExtResource("1")
+
+[node name="Legend" type="HFlowContainer" parent="Plan"]
+theme_override_constants/h_separation = 10
+
+[node name="Summary" type="VBoxContainer" parent="."]
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 1.2

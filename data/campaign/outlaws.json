@@ -1,0 +1,17 @@
+{
+  "rift_pirates": {
+    "name": "裂缝海盗同盟", "flag": -2, "color": "ed816d",
+    "base_name": "锈锚私掠港", "faith": "裂缝互保誓约",
+    "description": "各船长共享锈锚私掠港和货栈。劫掠船往返矿带与港外，优先截击载货船，也会从残骸搬走货物。",
+    "fleet": ["hound_d_pirates", "shrike_pirates"], "rebuild_days": 120, "reserve_hulls": 2,
+    "stand_off": 390, "patrol_radius": 180, "loot_range": 85, "loot_search": 480, "loot_units": 3,
+    "cargo_priority": 2.7, "priority_load": 0.35
+  },
+  "ember_cult": {
+    "name": "余烬圣约", "flag": -3, "color": "c8a1ee",
+    "base_name": "余烬圣所", "faith": "熄灯归火",
+    "description": "信徒相信遗迹中残存着旧日星火，视靠近圣所的外舰为亵渎。守誓舰在禁航圈内迎击，离圈后回驻。",
+    "fleet": ["cerberus_luddic_path", "manticore_luddic_path"], "rebuild_days": 180, "reserve_hulls": 2,
+    "stand_off": 720, "patrol_radius": 90, "guard_radius": 340
+  }
+}

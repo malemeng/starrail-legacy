@@ -1,0 +1,14 @@
+{
+  "regimes": {
+    "feudal":"licensed", "republic":"open", "oligarchy":"open", "junta":"restricted",
+    "corporate":"open", "administrative":"licensed", "nomadic":"licensed",
+    "celestial":"licensed", "shogunate":"restricted", "mandala":"licensed"
+  },
+  "codes": {
+    "frontier":{"name":"独立港登记章程","foreign_review":0,"foreign_limit":100,"issue_limit":100},
+    "open":{"name":"公开证券登记法","foreign_review":0,"foreign_limit":100,"issue_limit":50},
+    "licensed":{"name":"特许持股条例","foreign_review":25,"foreign_limit":100,"issue_limit":25},
+    "restricted":{"name":"战略资产管制令","foreign_review":10,"foreign_limit":49,"issue_limit":15}
+  },
+  "permit_days":180,"minimum_regulator_opinion":15
+}

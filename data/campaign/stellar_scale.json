@@ -1,0 +1,10 @@
+{
+  "rock_radius": [920, 1680],
+  "giant_radius": [2350, 3900],
+  "star_radius_factor": 68,
+  "surface_clearance": 1400,
+  "refinery_offset": [2010, 3010],
+  "core_beacon_spacing": [680, 980],
+  "min_beacon_spacing": 600,
+  "frontier_chunk_size": 2240
+}

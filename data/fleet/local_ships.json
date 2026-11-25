@@ -1,0 +1,22 @@
+{
+  "models": [{
+    "id":"gantry_ca","reference":"gantry_ca","reference_base":"gantry_ca",
+    "name":"桁架级工程巡洋舰","role":"轨道站施工／重型物资运输","category":"ship","market":true,
+    "capabilities":["station_construction"],"initial_shipyard_stock":1,"size":2,"frame":"crane","style_id":4,"paint":"c89848",
+    "hp":320,"cargo":192,"mass":148,"fuel":1.5,"fuel_tank":190,"burn":7,
+    "speed":0.62,"acceleration":18.0,"deceleration":15.0,"turn_rate":13.0,"power":16,"recipe":92,
+    "mine":9,"salvage":22,"reload":0.29,"deployment":17,"dp":17,"upkeep":16,"peak_seconds":480.0,
+    "cr_deploy":12,"crew_min":18,"crew_max":66,"sprite_size":[152,108],"sprite_center":[76,54],"sprite_scale":1,
+    "bounds":[[-68,-21],[-60,-30],[-30,-30],[-24,-22],[-10,-22],[-4,-31],[52,-31],[67,-25],[67,-18],[13,-16],[9,-8],[-8,-8],[-8,8],[9,8],[13,16],[67,18],[67,25],[52,31],[-4,31],[-10,22],[-24,22],[-30,30],[-60,30],[-68,21],[-62,12],[-62,-12]],
+    "engine_slots":[[-64,-20],[-61,-6],[-61,6],[-64,20]],"shield_center":[-8,0],"shield_type":"FRONT",
+    "shield_arc":150,"shield_efficiency":1.1,"shield_turn_rate":28,"shield_upkeep":0.4,"phase":false,
+    "fighter_bays":0,"wings":[],"reference_wings":[],"builtin_wings":[],"builtins":["civgrade"],"source_system":"damper","modules":[],
+    "mounts":[
+      {"id":"fore_upper","reference":"upper_arm","offset":[10,-24],"facing":-20,"arc":175,"type":"炮塔","size":1,"family":"ballistic","builtin":false},
+      {"id":"fore_lower","reference":"lower_arm","offset":[10,24],"facing":20,"arc":175,"type":"炮塔","size":1,"family":"ballistic","builtin":false},
+      {"id":"stern","reference":"keel","offset":[-39,0],"facing":180,"arc":200,"type":"炮塔","size":1,"family":"ballistic","builtin":false}
+    ],
+    "combat":{"op":58,"armor":105,"capacity":132,"dissipation":24,"system":"repair","stock":["rail_00","rail_00","pd"],"groups":[1,1,2]},
+    "tuning_limit":25,"presets":[]
+  }]
+}

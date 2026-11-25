@@ -1,3 +1,9 @@
 /.godot/
 /dist/
 *.tmp
+__pycache__/
+/.agent/
+/game_agent/
+/shutdown.json
+/_check_*.gd
+/_check_*.gd.uid

@@ -1,4 +1,4 @@
-[CmdletBinding(DefaultParameterSetName='Request')]
+﻿[CmdletBinding(DefaultParameterSetName='Request')]
 param(
     [Parameter(Mandatory)][string]$Session,
     [Parameter(ParameterSetName='Start',Mandatory)][switch]$Start,
@@ -27,7 +27,7 @@ if ($Start) {
         throw "Choose a new empty session directory: $Session"
     }
     $arguments = '-- "' + '--agent-dir=' + $Session.TrimEnd([IO.Path]::DirectorySeparatorChar) + '"'
-    if (-not $Watch) { $arguments = '--headless ' + $arguments }
+    if ($Watch) { $arguments += ' --agent-watch' } else { $arguments = '--headless ' + $arguments }
     $visibility = if ($Watch) { 'Normal' } else { 'Hidden' }
     $process = Start-Process -FilePath $Game -ArgumentList $arguments -WindowStyle $visibility -PassThru
     while (-not (Test-Path -LiteralPath $ready -PathType Leaf)) {
@@ -43,7 +43,7 @@ if ($Start) {
 }
 
 $metadata = Get-Content -Encoding utf8 -LiteralPath $ready -Raw | ConvertFrom-Json
-if ($metadata.protocol -ne 1) { throw 'Unsupported agent bridge protocol.' }
+if ($metadata.protocol -notin @(1, 2)) { throw 'Unsupported agent bridge protocol.' }
 $requestFile = Join-Path $Session 'request.json'
 $replyFile = Join-Path $Session 'response.json'
 $lockPath = Join-Path $Session 'client.lock'
@@ -53,18 +53,29 @@ try {
     if ((Test-Path -LiteralPath $requestFile) -or (Test-Path -LiteralPath $replyFile)) {
         throw 'Session has an unfinished request or unread reply. Inspect response.json before retrying; do not blindly replay an action.'
     }
-    $process = Get-Process -Id $metadata.pid -ErrorAction Stop
+    $process = Get-Process -Id $metadata.pid -ErrorAction SilentlyContinue
+    if (-not $process -or $process.HasExited) {
+        '{"ok":false,"error":"game_exited","message":"游戏进程已退出"}'
+        return
+    }
     if ($Json -notmatch '^\s*\{') { throw 'Json must be an object.' }
     $parameters = $Json | ConvertFrom-Json
+    if ($metadata.watch -and $Action -eq 'step' -and -not $PSBoundParameters.ContainsKey('TimeoutSeconds')) {
+        # A watched 1800-tick order takes at least 30 seconds at normal display cadence.
+        $deadline = [DateTime]::UtcNow.AddSeconds(90)
+    }
     $id = [Guid]::NewGuid().ToString('N')
     $request = @{ id = $id; action = $Action; args = $parameters } | ConvertTo-Json -Depth 12 -Compress
     if ([Text.Encoding]::UTF8.GetByteCount($request) -gt 16384) { throw 'Request exceeds 16 KiB.' }
     $temp = Join-Path $Session ("client-" + $id + ".tmp")
     [System.IO.File]::WriteAllText($temp, $request, [Text.UTF8Encoding]::new($false))
     [System.IO.File]::Move($temp, $requestFile)
-    while (-not (Test-Path -LiteralPath $replyFile -PathType Leaf)) {
+    while (-not (Test-Path -LiteralPath $replyFile -PathType Leaf) -or (Test-Path -LiteralPath $requestFile -PathType Leaf)) {
         if ([DateTime]::UtcNow -ge $deadline) { throw 'Timed out. Outcome may be unknown; inspect the session instead of replaying the action.' }
-        if ($process.HasExited -and -not (Test-Path -LiteralPath $replyFile)) { throw 'Game exited without a reply.' }
+        if ($process.HasExited -and -not (Test-Path -LiteralPath $replyFile)) {
+            '{"ok":false,"error":"game_exited","message":"游戏进程已退出"}'
+            return
+        }
         Start-Sleep -Milliseconds 25
     }
     $reply = Get-Content -Encoding utf8 -LiteralPath $replyFile -Raw

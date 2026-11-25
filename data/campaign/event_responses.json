@@ -1,0 +1,14 @@
+{
+  "aid": {
+    "effects": {"credit": -15, "prestige": 3, "stress": 3},
+    "stress_modifiers": [{"condition": {"personality_gte": {"compassion": 0}}, "amount": -11}]
+  },
+  "risk": {
+    "effects": {"credit": 35, "secret": "smuggling", "stress": 6},
+    "stress_modifiers": [{"condition": {"personality_gte": {"honor": 1}}, "amount": 12}]
+  },
+  "work": {"effects": {"credit": 20, "merit": 1, "stress": 5}},
+  "study": {"effects": {"experience": 8, "merit": 2, "stress": -3}},
+  "investigate": {"effects": {"experience": 8, "merit": 2, "stress": -3}},
+  "decline": {"effects": {"stress": -2}}
+}

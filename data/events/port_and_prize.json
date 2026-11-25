@@ -1,0 +1,43 @@
+[
+  {
+    "id": "frontier.smuggler_bribe",
+    "on_action": "on_dock_regular_port",
+    "title": "港务稽查员的暗示",
+    "body": "在{port_name}，稽查员圈出了舱单上的两箱奢侈品。港务经理{manager_name}愿意收钱销案，但会留下你的行贿记录。你可以在离港前处理这次稽查。",
+    "base_weight": 12,
+    "cooldown_days": 180,
+    "allow_queue": true,
+    "trigger": {"player_cargo_gte": {"luxury": 2}, "player_suspicion_gte": 15, "at_event_port": true, "manager_alive": true},
+    "pending_requires": {"at_event_port": true, "manager_alive": true},
+    "weight_multipliers": [
+      {"condition": {"personality_gte": {"greed": 1}}, "factor": 2.5},
+      {"condition": {"stat_gte": {"intrigue": 12}}, "factor": 0.4}
+    ],
+    "options": [
+      {"label": "付 ¢65 销案：嫌疑 −15，经理获得行贿把柄", "requires": {"at_event_port": true, "manager_alive": true},
+        "effects": {"credit": -65, "suspicion": -15, "secret": "bribery", "grant_hook_to_manager": {"kind": "bribery", "strength": 1, "days": 360}},
+        "stress_modifiers": [{"condition": {"personality_gte": {"honor": 1}}, "amount": 20}]},
+      {"label": "消耗经理的把柄：嫌疑 −30，经理好感 −15", "requires": {"at_event_port": true, "hook_on_manager": true},
+        "effects": {"consume_hook": true, "suspicion": -30, "opinion_manager": -15}},
+      {"label": "交出两箱奢侈品：嫌疑 −10，正统性 +1", "requires": {"at_event_port": true, "player_cargo_gte": {"luxury": 2}},
+        "effects": {"cargo": {"luxury": -2}, "legitimacy": 1, "suspicion": -10}},
+      {"label": "留下船籍等复查：嫌疑 +8，压力 +5", "effects": {"suspicion": 8, "stress": 5}}
+    ]
+  },
+  {
+    "id": "frontier.prize_watch",
+    "on_action": "on_ship_captured",
+    "title": "战利舰上的第一班岗",
+    "body": "登舰队已接管{ship_name}。两名原舰轮机员愿意留下，只要发给他们 ¢45 津贴。你也可以亲自主持交接，或准许他们离舰。",
+    "base_weight": 1,
+    "cooldown_days": 30,
+    "trigger": {"prize_owned": true},
+    "pending_requires": {"prize_owned": true},
+    "options": [
+      {"label": "拨 ¢45 留下两名轮机员", "requires": {"prize_capacity_gte": 2}, "effects": {"credit": -45, "prize_crew": 2, "merit": 2}},
+      {"label": "亲自主持交接：经验 +8，压力 +6", "requires": {"prize_owned": true}, "effects": {"experience": 8, "stress": 6}},
+      {"label": "准许轮机员离舰：威望 +1", "effects": {"prestige": 1},
+        "stress_modifiers": [{"condition": {"has_trait": "compassionate"}, "amount": -8}]}
+    ]
+  }
+]

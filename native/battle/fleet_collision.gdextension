@@ -1,0 +1,6 @@
+[configuration]
+entry_symbol = "fleet_collision_init"
+compatibility_minimum = "4.5"
+
+[libraries]
+windows.x86_64 = "res://native/battle/fleet_collision.dll"

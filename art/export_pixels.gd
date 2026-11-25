@@ -20,12 +20,15 @@ func _initialize() -> void:
 	for module in range(4):
 		Pixels.stamp(stations, Pixels.station(module, colors[module % 3]), Vector2i(80 * module, 0))
 	write(stations, "station_examples")
-	var faces := Pixels.blank(64 * 4, 72)
-	for index in range(4):
-		var look := {"face": index, "skin": index + 1, "cut": [1, 3, 4, 2][index],
-			"hair": [0, 3, 4, 2][index], "eyes": index, "iris": index, "nose": index % 3,
-			"mouth": index % 3, "wear": [0, 3, 1, 2][index], "mark": index}
-		Pixels.stamp(faces, Pixels.portrait(look), Vector2i(index * 64, 0))
+	var faces := Pixels.blank(128 * 4, 144 * 2)
+	for index in range(8):
+		var look := {"face": index%4, "skin": [1,3,2,4,0,2,4,3][index],
+			"cut":[0,1,4,3,2,5,0,1][index], "hair":[0,1,3,2,0,5,2,4][index],
+			"eyes":index%4,"iris":index%5,"nose":index%3,"mouth":index%3,"mark":index%4,
+			"uniform":index,"uniform_style":[0,1,0,1,1,2,2,2][index],"crest":(index+1)*5,
+			"age_band":[0,0,2,0,0,1,0,1][index],"regalia":index in [2,7],
+			"stress_tier":2 if index == 5 else 0,"wounded":index == 6}
+		Pixels.stamp(faces, Pixels.portrait(look), Vector2i(index%4*128,index/4*144))
 	write(faces, "portrait_examples")
 	var effects := Pixels.blank(24 * 4, 24 * 3)
 	for kind in range(3):
@@ -38,8 +41,17 @@ func _initialize() -> void:
 	var showcase := Pixels.blank(960, 626)
 	showcase.fill(Color("101b2a"))
 	Pixels.stamp(showcase, Pixels.bay(0), Vector2i.ZERO, 3)
-	Pixels.stamp(showcase, ships.get_region(Rect2i(0, 0, 192, 40)), Vector2i(575, 466), 2)
-	Pixels.stamp(showcase, faces, Vector2i(22, 540))
+	var berth_x := 599
+	for kind in [0,1,7]:
+		var model: Dictionary = Pixels.Hulls.MODELS[kind]
+		var example := Pixels.hull(kind,Color(model.paint))
+		var scale_factor := float(model.sprite_scale) * 0.68
+		example.resize(roundi(example.get_width()*scale_factor),roundi(example.get_height()*scale_factor),Image.INTERPOLATE_NEAREST)
+		Pixels.stamp(showcase,example,Vector2i(berth_x,481-example.get_height()/2))
+		berth_x += example.get_width()+13
+	var face_strip := faces.get_region(Rect2i(0,0,512,144))
+	face_strip.resize(256,72,Image.INTERPOLATE_NEAREST)
+	Pixels.stamp(showcase, face_strip, Vector2i(22, 540))
 	Pixels.stamp(showcase, stations, Vector2i(302, 543))
 	Pixels.stamp(showcase, effects, Vector2i(825, 546))
 	write(showcase, "pixel_preview")

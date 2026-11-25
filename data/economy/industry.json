@@ -1,0 +1,76 @@
+{
+  "wares": [
+    {"slot":0,"id":"ore","name":"矿石","storage":"solid","price":9},
+    {"slot":1,"id":"alloy","name":"合金","storage":"container","price":46},
+    {"slot":2,"id":"fuel","name":"燃料","storage":"container","price":8,"target_stock":90},
+    {"slot":3,"id":"food_med","name":"口粮医疗","storage":"container","price":16},
+    {"slot":4,"id":"hull_parts","name":"船体部件","storage":"container","price":78},
+    {"slot":5,"id":"water","name":"净水","storage":"container","price":13},
+    {"slot":6,"id":"luxury","name":"违禁奢侈品","storage":"container","price":75},
+    {"slot":7,"id":"silicon","name":"硅砂","storage":"solid","price":11,"seed_stock":42},
+    {"slot":8,"id":"ice","name":"冰晶","storage":"solid","price":8,"seed_stock":42},
+    {"slot":9,"id":"gas_h2","name":"聚变气","storage":"liquid","price":10,"seed_stock":42},
+    {"slot":10,"id":"energy","name":"能量电池","storage":"container","price":6,"seed_stock":80},
+    {"slot":11,"id":"wafer","name":"硅晶圆","storage":"container","price":44,"seed_stock":42},
+    {"slot":12,"id":"electronics","name":"航电元件","storage":"container","price":84,"seed_stock":42},
+    {"slot":13,"id":"ordnance","name":"弹药组件","storage":"container","price":95,"seed_stock":42},
+    {"slot":14,"id":"engine_parts","name":"引擎组件","storage":"container","price":105,"seed_stock":42},
+    {"slot":15,"id":"scrap","name":"废料","storage":"solid","price":12}
+  ],
+  "commodity_market":{"target_stock":65,"ask_rate":1.06,"bid_rate":0.91,"merchant_ask_discount":0.94,
+    "empty_stock_multiplier":1.33,"stock_sensitivity":0.26,"floor_multiplier":0.80,"ceiling_multiplier":1.55,
+    "resale_bid_ceiling":0.86,"dock_supplies":["fuel","hull_parts","ordnance"]},
+  "storage": [
+    {"slot":0,"id":"solid","capacity":450},
+    {"slot":1,"id":"liquid","capacity":220},
+    {"slot":2,"id":"container","capacity":1000}
+  ],
+  "modules": [
+    {"slot":0,"id":"mine","name":"采矿","primary":["ore","silicon","ice","gas_h2"],"initial":["solar","chemical"]},
+    {"slot":1,"id":"refinery","name":"精炼","initial":["electronics","recycler"],"recipes":[{"in":{"ore":3,"energy":1},"out":"alloy","units":3},{"in":{"silicon":2,"energy":1},"out":"wafer","units":2}]},
+    {"slot":2,"id":"yard","name":"船厂","initial":["components","habitat"]},
+    {"slot":3,"id":"defense","name":"防务"},
+    {"slot":4,"id":"habitat","name":"居住生态","recipes":[{"in":{"water":1,"energy":1},"out":"food_med","units":4}]},
+    {"slot":5,"id":"solar","name":"太阳能","primary":["energy"]},
+    {"slot":6,"id":"chemical","name":"化工","recipes":[{"in":{"ice":2,"energy":1},"out":"water","units":4},{"in":{"gas_h2":1,"water":1,"energy":1},"out":"fuel","units":3}]},
+    {"slot":7,"id":"electronics","name":"电子","recipes":[{"in":{"wafer":1,"gas_h2":1,"energy":1},"out":"electronics","units":3}]},
+    {"slot":8,"id":"components","name":"组件制造","recipes":[{"in":{"alloy":2,"energy":1},"out":"hull_parts","units":3},{"in":{"alloy":1,"electronics":1,"energy":1},"out":"ordnance","units":2},{"in":{"alloy":1,"electronics":1,"gas_h2":1},"out":"engine_parts","units":2}]},
+    {"slot":9,"id":"recycler","name":"废料回收","recipes":[{"in":{"scrap":3,"energy":2},"out":"alloy","units":3},{"in":{"scrap":4,"energy":2},"out":"hull_parts","units":2}]}
+  ],
+  "operating_area": {"trade_jumps":2,"mining_jumps":1,"maximum_jumps":5,
+    "cargo_per_extra_trade_jump":120,"max_extra_trade_jumps":2,"empty_travel_weight":2.0},
+  "opening_industry_stock":{"input_fraction":[0.20,0.70],"output_fraction":[1.40,1.90],"specialty_fraction":[2.50,3.10]},
+  "dividends": {"period_days":30,"default_percent":25,"cash_reserve":1500},
+  "equity":{"corporate_regimes":[2,4],"par_value":40,"pe_multiple":15,"min_pb_percent":50,"founder_cash_limit":8000,"founding_partners":3,"partner_percent":10,"maximum_issue_percent":25,"offer_days":30,"working_capital":38000},
+  "equity_orders":{"period_days":10,"listing_days":30,"lot_percent":9,"cash_reserve":600,"bid_budget_percent":25,"ask_markup":1.09,"bid_ratio":0.93,"minimum_opinion":-55,"consent_threshold":60,"long_term_ask_multiplier":1.18,"cautious_bid_multiplier":0.82},
+  "station_capital": {"core_port":38000,"frontier_port":4800,"frontier_fund":90000,"black_cash":1800},
+  "freight_notices":{"lot_size":8,"search_jumps":5,"handling_fraction":0.025},
+  "fleet_rendezvous":{"escort_units_per_day":30,"supply_units_per_day":40},
+  "construction": {
+    "foundation":{"credits":6000,"days":30,"bill":{"alloy":20,"hull_parts":4,"electronics":2,"energy":6}},
+    "expansion":{"credits":3500,"days":30,"bill":{"alloy":16,"hull_parts":3,"electronics":1,"energy":4}},
+    "max_modules":8,"max_sites":6,"minimum_separation":145,"housing_expansion":460,"standard_expansion":140,
+    "ship_work_range":185,"minimum_altitude":58,"minimum_gravity_radii":1.35,"maximum_gravity_radii":3.0
+  },
+  "shipbuilding": {
+    "universal":{"mass":{"alloy":2.2},"size":{"hull_parts":6,"engine_parts":3,"electronics":3,"ordnance":3},"mounts":{"ordnance":1.0,"electronics":0.5},"bays":{"hull_parts":8,"electronics":6,"ordnance":4},"labor_factor":1},
+    "direct":{"mass":{"ore":4.5},"size":{"silicon":20,"gas_h2":18,"energy":22},"mounts":{"silicon":2.5,"energy":4},"bays":{"silicon":10,"gas_h2":8,"energy":16},"labor_factor":1.25},
+    "recycling":{"mass":{"alloy":1.0},"size":{"hull_parts":12,"energy":14},"mounts":{"hull_parts":1.5,"energy":3.0},"bays":{"hull_parts":10,"energy":14},"labor_factor":1.4,"max_size":1,"excluded_systems":["phase"]}
+  },
+  "ship_market": {
+    "worker_hours":{"per_hull_unit":640,"per_mount_grade":160,"per_bay":1200},
+    "shipwright_hourly_wage":0.13,
+    "shipyard_workforce_share":0.35,
+    "worker_hours_per_month":160,
+    "yard_overhead_rate":0.12,
+    "reference_market_stock":65,
+    "reference_port_tax":0.10,
+    "initial_frigate_reserve_per_faction":3,
+    "charter_buyout_share":0.75,
+    "engineering_contract_share":0.018,
+    "engineering_crew_share":0.35,
+    "starting_working_capital":2400,
+    "captain_quarterly_pay":600
+  },
+  "colony": {"consumption":["food_med","water"],"person_days_per_unit":4800,"initial_black_market":{"food_med":28,"hull_parts":10,"water":12,"luxury":16},"wage_per_crew":3}
+}

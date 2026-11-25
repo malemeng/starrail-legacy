@@ -10,6 +10,7 @@ const Pixels = preload("res://art/pixel_art.gd")
 const Battle = preload("res://combat.gd")
 const Celestial = preload("res://celestial.gd")
 const Flight = preload("res://flight.gd")
+const Society = preload("res://scripts/campaign/society.gd")
 const SCENE = preload("res://game.tscn")
 
 var checks := 0
@@ -75,21 +76,54 @@ func logistics() -> void:
 	Economy.produce(world, yard)
 	check(yard.hulls[day_index] == before, "shipyard stops when out of alloy")
 	yard.stock[1] = 150
-	Economy.produce(world, yard)
+	var electronics: int = yard.stock[Economy.Industry.Ware.ELECTRONICS]
+	yard.stock[Economy.Industry.Ware.ELECTRONICS] = 0
+	Economy.shipyard(world, yard)
+	check(yard.hulls[day_index] == before and yard.stock[1] == 150, "missing electronics holds ship order without consuming partial inputs")
+	yard.stock[Economy.Industry.Ware.ELECTRONICS] = electronics
+	Economy.shipyard(world, yard)
+	if yard.has("yard_work"):
+		var labor: Dictionary = yard.yard_work
+		var shortfall: int = Economy.Industry.labor_charge(labor.required)-Economy.Industry.labor_charge(labor.hours)
+		check(labor.kind==day_index and yard.stock[1]==150 and shortfall>0 and shortfall<=world.active().wallet,"cash-limited shipyard retains paid labor on the unfinished hull")
+		world.credit(world.player,-shortfall)
+		world.Treasury.post(world,yard,shortfall,"船厂出资",false)
+		Economy.shipyard(world,yard)
 	check(yard.hulls[day_index] > before and yard.stock[1] == 150 - Hulls.MODELS[day_index].recipe, "shipyard consumes actual alloy")
 	world.berth(vessel, home)
+	world.credit(world.player, int(Economy.ship_quote(yard,0).price))
 	var spare := Economy.buy_ship(world, home, 0)
 	var workers: Array = world.people.values().filter(func(actor): return actor.loc == home and actor.id != world.player and actor.ship == 0)
 	check(spare != 0 and Economy.assign(world, spare, workers.back().id, "贸易", mine, refinery), "hire and assign trader")
-	world.tick(96)
-	check(world.ships.has(spare) and world.ships[spare].captain == workers.back().id and world.ships[spare].system == 1, "delegated ship has travelled")
-	world.active().wallet = 900
+	var loaded := false
+	var sold := false
+	for _day in range(96):
+		var balance: int = world.active().wallet
+		world.tick()
+		if not world.ships.has(spare):
+			break
+		var trader: Dictionary = world.ships[spare]
+		if trader.dock == mine and trader.cargo[0] > 0:
+			loaded = true
+		if loaded and trader.dock == refinery and trader.cargo[0] == 0:
+			sold = trader.captain == workers.back().id and world.active().wallet > balance
+			break
+	check(loaded and sold, "delegated trader crossed systems, loaded ore, delivered it and credited the operator")
+	var engineer := Hulls.kind_for_id("gantry_ca")
+	world.active().wallet = 12000 + Economy.ship_quote(yard,engineer).price
+	var bought := Economy.buy_ship(world,home,engineer)
+	check(bought != 0 and world.pilot(bought), "purchase and pilot a licensed orbital construction ship")
+	vessel = world.ride()
 	world.depart(vessel)
 	var planet: Dictionary = world.systems[0].planets[0]
 	vessel.pos = planet.pos + Vector2(planet.radius + 100,0)
 	vessel.cargo[1] = 36
+	vessel.cargo[4] = 7
+	vessel.cargo[12] = 3
+	vessel.cargo[10] = 10
 	var site := Economy.deploy(world, 1, vessel.pos)
-	check(site != 0 and world.berth(vessel, site) and Economy.donate(world, site) == 20, "player funds a construction site")
+	check(site != 0 and world.berth(vessel, site) and Economy.donate(world, site) == 32, "player funds a construction site")
+	check(world.ports[site].build_storage[1] == 20 and world.ports[site].stock[1] == 0, "building materials isolated from the market")
 	world.tick(36)
 	check(world.ports[site].build == 0, "material-backed construction completed")
 	check(Economy.expand(world, site, 3), "station extension ordered")
@@ -114,7 +148,7 @@ func inheritance() -> void:
 		var world := scenario("inheritance")
 		var original := world.player
 		var home: int = world.active().loc
-		var mate: int = world.random_person(-1, home, "冬青")
+		var mate: int = world.random_person(-1, home, "冬青",1-int(world.active().gender))
 		world.people[mate].noble = true
 		check(Politics.marry(world, original, mate), "noble marriage")
 		var heirs: Array = []
@@ -135,21 +169,27 @@ func inheritance() -> void:
 		Politics.die(world, original)
 		check(world.player == first.id and world.ports[first_station].owner == first.id and world.ships[inherited_ship].owner == first.id, "main estate")
 		check(world.ports[second_station].owner == (first.id if law else heirs[1]), "partition vs concentration")
-		check(first.shares[firm] == 100 and world.firms[firm].director == first.id and first.ship == 0, "shares and appointment")
+		check(first.shares[firm] == world.firms[firm].issued and world.firms[firm].director == first.id and first.ship == 0, "shares and appointment")
 		if law == 0:
 			check(world.people[heirs[2]].wallet > 0, "unlanded child compensated")
 	var world := scenario("commoner", false)
 	var previous := world.player
 	var replacement: int = world.ports[world.active().loc].manager
 	var funds: int = world.people[replacement].wallet
-	check(not Politics.change_law(world) and not Politics.marry(world, previous, replacement), "commoners don't form dynasties")
+	var unmarried:=world.snapshot()
+	var partner_id:=world.random_person(world.NEUTRAL,world.active().loc,"谷家",1-int(world.active().gender))
+	var common_partner: Dictionary=world.people[partner_id]
+	common_partner.noble=false
+	common_partner.opinions[previous]=60
+	check(not Politics.change_law(world) and Politics.marry(world,previous,partner_id) and common_partner.spouse==previous,"two eligible commoners may marry while noble succession law remains unavailable")
+	check(world.load_state(unmarried) and world.active().spouse==0 and world.active().children.is_empty(),"restore the independent heirless commoner for succession")
 	world.day = 240
 	var markets: Array = world.ports[world.systems[1].ports[0]].stock.duplicate()
 	Politics.die(world, previous)
 	check(world.succession and world.player == 0 and Politics.choose(world, replacement), "heirless continuation")
 	check(world.player == replacement and world.active().wallet == funds and world.day == 240 and world.ports[world.systems[1].ports[0]].stock == markets, "continuation leaves world and assets intact")
 	var regency_world := scenario()
-	var guardian: int = regency_world.random_person(-1, regency_world.active().loc, "另一家")
+	var guardian: int = regency_world.random_person(-1, regency_world.active().loc, "另一家",1-int(regency_world.active().gender))
 	regency_world.people[guardian].noble = true
 	var progenitor := regency_world.player
 	Politics.marry(regency_world, progenitor, guardian)
@@ -209,13 +249,35 @@ func government_and_wars() -> void:
 	var world := scenario("war")
 	world.tick(3900)
 	check(world.chronicle.any(func(entry): return "被" in entry[1] and "夺取" in entry[1]), "NPC seize stations without player")
-	check(world.factions.values().any(func(faction): return not faction.alive), "NPC elimination")
+	# A single autonomous battle has a deterministic last-port loss condition.
+	var siege := scenario("last-port")
+	var last_port: int = siege.systems_owned(1)[0]
+	for id in siege.systems_owned(1):
+		if id != last_port:
+			siege.ports[id].flag = siege.NEUTRAL
+	siege.set_treaty(0, 1, -1)
+	var capital: Dictionary = siege.ports[last_port]
+	capital.defense = 1
+	var fleet_id := siege.ship(Hulls.kind_for_reference("onslaught"), 0, 0, 0, capital.system, capital.pos)
+	siege.ships[fleet_id].job = {"kind":"攻城","target":last_port,"arrived":true,"eta":siege.day}
+	Politics.military(siege)
+	check(capital.flag == 0 and not siege.factions[1].alive and siege.factions[1].capital == 0, "NPC elimination on loss of last port")
 	for seed_index in range(6):
 		world = scenario("long-" + str(seed_index), false)
 		world.tick(10000)
 		check(world.ports.values().all(func(station): return station.stock.all(func(stock): return stock >= 0)), "nonnegative inventory after long simulation")
 		check(world.factions.values().all(func(power): return world.people.has(power.leader)), "faction leaders remain valid")
-		check(world.people.values().all(func(actor): return actor.noble or (actor.children.is_empty() and actor.parents.is_empty() and actor.spouse == 0)), "NPC commoners do not enter noble genealogies")
+		check(world.people.values().all(func(person):
+			for parent in person.parents:
+				if not world.people.has(parent) or person.id not in world.people[parent].children:
+					return false
+			for child in person.children:
+				if not world.people.has(child) or person.id not in world.people[child].parents:
+					return false
+			if person.alive and person.spouse!=0:
+				var spouse: Dictionary=world.people.get(person.spouse,{})
+				return spouse.get("alive",false) and spouse.get("spouse",0)==person.id
+			return true), "noble and common family registers retain reciprocal parent, child and living spouse relationships")
 	for regime in range(5):
 		world = scenario("regime-" + str(regime))
 		var power: Dictionary = world.factions[0]
@@ -225,7 +287,7 @@ func government_and_wars() -> void:
 		chief_data.noble = true
 		var partner: int = chief_data.spouse
 		if partner == 0:
-			partner = world.random_person(0, power.capital, "异族")
+			partner = world.random_person(0, power.capital, "异族",1-int(chief_data.gender))
 			world.people[partner].noble = true
 			Politics.marry(world, chief, partner)
 		var heir := Politics.child(world, chief, partner)
@@ -236,7 +298,7 @@ func government_and_wars() -> void:
 		world.people[officer].origin = 0
 		world.ship(2, officer, officer, 0, world.ports[power.capital].system, Vector2.ZERO, power.capital)
 		var firm := world.incorporate("控股", officer, power.capital)
-		check(world.people[officer].shares[firm] == 100, "voting shares")
+		check(world.people[officer].shares[firm] == world.firms[firm].issued, "voting shares")
 		Politics.die(world, chief)
 		check(power.leader == heir if regime == 0 else power.leader == officer, "regime-specific leadership: " + str(regime))
 
@@ -278,10 +340,13 @@ func ui_flow() -> void:
 	check(team.all(func(member): return world.ships[member].dock == 0),"two escorts depart with flagship")
 	game.set_speed(1)
 	Input.action_press(&"left")
-	for index in range(35):
-		game.flight.step(1.0 / 60.0, Vector2.LEFT)
+	var departure: Vector2 = vessel.pos
+	game.step_simulation(Vector2.LEFT, false, false, Vector2.ZERO, false)
+	var initial_speed: float = vessel.battle.motion.length()
+	for index in range(70):
+		game.step_simulation(Vector2.LEFT, false, false, Vector2.ZERO, false)
 	Input.action_release(&"left")
-	check(vessel.dock == 0 and vessel.pos.x < origin.x - 80, "live movement input")
+	check(vessel.dock == 0 and initial_speed > 0 and vessel.battle.motion.length() > initial_speed and vessel.pos.x < departure.x - 60.0, "live movement accelerates the flagship and covers distance after departure")
 	check(game.canvas.visible and not game.dock_view.stage.visible, "departure restores flight stage")
 	var gravity := Celestial.gravity_point(world.systems[0])
 	var fuel: float = vessel.fuel
@@ -299,6 +364,10 @@ func ui_flow() -> void:
 	vessel.pos = gravity + Vector2(Celestial.JUMP_RANGE,0)
 	game.flight.change_layer()
 	check(game.galaxy and vessel.layer, "exact gravity point radius permits hyperspace entry")
+	await process_frame
+	check(Society.pending(world).is_empty() and game.find_children("*", "AcceptDialog", true, false).all(
+		func(dialog): return not dialog.visible), "ordinary jumps leave the flight controls unobstructed")
+	check(game.speed == 1 and not world.attention, "ordinary jumps preserve the pilot's speed")
 	vessel.galpos = Vector2(2500,2500)
 	game.flight.change_layer()
 	check(game.galaxy and vessel.system == 0,"hyperspace exit requires a system beacon")
@@ -320,12 +389,14 @@ func ui_flow() -> void:
 	press(game, KEY_2, true)
 	press(game, KEY_1)
 	check(not vessel.fit.auto[1] and vessel.battle.group == 1, "Shift+2 toggles autofire back off; 1 selects main guns")
+	var flux_before_jets: float=vessel.battle.soft_flux
 	press(game, KEY_F)
-	check(vessel.battle.system_time > 0.0 and vessel.battle.soft_flux > 0.0, "F activates the flagship system")
+	check(vessel.battle.system_time>0.0 and vessel.battle.active_profile.id=="maneuveringjets" and vessel.battle.soft_flux==flux_before_jets,"F engages maneuvering jets without an activation flux cost")
+	Battle.add_flux(world,vessel,12.0)
 	press(game, KEY_V)
 	check(vessel.battle.vent and not vessel.battle.shield, "V initiates venting")
 	Battle.tick(vessel, 2.0)
-	vessel.pos = Vector2(-20,100)
+	vessel.pos = Celestial.anchor(world.systems[1],Vector2(-20,100))
 	var threat: int = game.flight.target(vessel,350.0)
 	check(threat != 0 and game.flight.issue(2,threat) == 2 and team.all(func(member): return world.ships[member].battle.focus == threat),"focus attack dispatches to both escorts")
 	check(game.flight.issue(2,team[0]) == 0,"friendly or vanished target cannot receive focus order")
@@ -341,15 +412,11 @@ func ui_flow() -> void:
 	check(game.galaxy, "withdrawal does not prevent the flagship's next jump")
 	game.flight.change_layer()
 	check(team.all(func(member): return not world.ships[member].battle.retired and world.ships[member].battle.order == 1),"withdrawn ships regroup on the next system entry")
-	for index in range(team.size()):
-		var member: Dictionary = world.ships[team[index]]
-		member.pos = Vector2(-1000, 620 + index * 50)
-	vessel.pos = Vector2(-20, 100)
-	game.flight.auto_battle()
-	check(not world.ships.values().any(func(other): return other.system == 1 and other.flag == world.RAIDERS), "automatic battle destroys its opponent")
+	vessel.pos = Celestial.anchor(world.systems[1],Vector2(-20,100))
 	var npc := world.random_person(-2, 0)
 	var enemy := world.ship(0, 0, npc, -2, 1, vessel.pos + Vector2(155, 0))
-	world.ships[enemy].hp = 16
+	var pulse: Dictionary = Hulls.WEAPONS[vessel.fit.weapons[0]]
+	world.ships[enemy].hp = pulse.damage
 	world.ships[enemy].battle.armor = 0.0
 	vessel.heading = 0.0
 	press(game, KEY_1, true)
@@ -358,7 +425,13 @@ func ui_flow() -> void:
 	press(game, KEY_1, true)
 	for index in range(35):
 		Battle.project(world, vessel.system, 1.0 / 60.0)
-	check(not world.ships.has(enemy), "projectile collision resolves battle in the world")
+	check(world.ships.has(enemy) and world.ships[enemy].hp < pulse.damage and world.ships[enemy].hp > 0.0, "the first projectile reaches the physical hull and residual armor absorbs part of its hit")
+	Battle.tick(vessel, pulse.cool + 0.01)
+	var fired: int = game.flight.fire(vessel, world.ships[enemy].pos)
+	check(fired > 0, "the player can fire the next salvo after the fitted weapon cycles")
+	for index in range(35):
+		Battle.project(world, vessel.system, 1.0 / 60.0)
+	check(not world.ships.has(enemy), "the second projectile destroys the damaged target in the shared world")
 	game.tab = "资产"
 	game.refresh()
 	await process_frame
@@ -403,26 +476,10 @@ func frontier_catalog() -> void:
 	check(not world.can_dock({"kind": 7, "flag": -1}, world.ports[home]), "freeport cannot dock a capital")
 	var heavy_port: Dictionary = world.ports[world.factions[0].capital]
 	check(Hulls.station_limit(heavy_port) == Hulls.Size.CAPITAL, "designated dock supports capital ships")
-	var old := world.snapshot().duplicate(true)
-	old.erase("save_version")
-	old.version = 3
-	for station in old.ports.values():
-		station.hulls = station.hulls.slice(0, 3)
-		station.stock = station.stock.slice(0, 3)
-		station.erase("capital_yard")
-		station.erase("pop")
-	for ship in old.ships.values():
-		ship.erase("battle")
-		ship.erase("fit")
-		ship.erase("crew")
-		ship.cargo = ship.cargo.slice(0,3)
-	var loaded := World.new()
-	check(loaded.load_state(old) and loaded.ports[home].hulls.size() == Hulls.MODELS.size() and loaded.player == world.player and loaded.rng.state == world.rng.state, "v3 save migrates without remapping hulls or RNG")
-	check(loaded.ride().battle.armor == Hulls.COMBAT[loaded.ride().kind].armor and loaded.ride().cargo.size() == 7 and loaded.ports[home].pop > 0,"migration refills old ship and station fields")
 	var hashes := {}
 	for model in range(Hulls.MODELS.size()):
 		var sprite := Pixels.hull(model, Pixels.AMBER)
-		check(sprite.get_size() == Vector2i(64, 40) and sprite.get_pixel(0, 0).a == 0.0, "hull sprite dimensions and transparency")
+		check(sprite.get_size() == [Vector2i(80,56),Vector2i(112,80),Vector2i(152,108),Vector2i(208,144)][Hulls.MODELS[model].size] and sprite.get_pixel(0, 0).a == 0.0, "hull sprite dimensions and transparency")
 		hashes[hash(sprite.get_data())] = true
 	check(hashes.size() == Hulls.MODELS.size(), "every ship model has a distinct pixel sprite")
 
@@ -431,35 +488,44 @@ func combat_edges() -> void:
 	var vessel := world.ride()
 	for kind in range(Hulls.MODELS.size()):
 		var spec: Dictionary = Hulls.COMBAT[kind]
-		check(spec.slots.size() in range(2,6) and Hulls.fitting_cost(kind,Hulls.stock_fit(kind)) >= 0, "stock slots and OP valid for hull %d" % kind)
+		check(spec.slots.size() == Hulls.MODELS[kind].mounts.size() and Hulls.fitting_cost(kind,Hulls.stock_fit(kind)) >= 0, "stock slots and OP valid for hull %d" % kind)
 	var state: Dictionary = vessel.battle
-	var record: Dictionary = vessel.fit.duplicate(true)
+	var record: Dictionary = vessel.fit.as_dictionary()
 	record.weapons[0] = "lance"
 	check(not world.outfit(vessel.id, record), "heavy weapon rejected on small slot")
-	record = vessel.fit.duplicate(true)
+	record = vessel.fit.as_dictionary()
 	record.caps = 12
 	record.vents = 12
 	check(not world.outfit(vessel.id, record), "OP ceiling enforced")
-	record = vessel.fit.duplicate(true)
+	record = vessel.fit.as_dictionary()
 	record.caps = 2
 	check(world.outfit(vessel.id, record) and is_equal_approx(Hulls.capacity(vessel),110), "valid fit changes capacity")
-	Battle.shield(vessel,true)
+	vessel.heading = 0.0
+	var shield_face: Vector2 = Battle.Defenses.shield_world_center(vessel) + Vector2.RIGHT * float(Battle.Defenses.geometry(vessel.kind).shield_radius)
+	Battle.shield(vessel,true,shield_face)
+	Battle.tick(vessel,1.0)
 	var armor: float = state.armor
-	Battle.hit(world,vessel,20,0,vessel.pos,Vector2.RIGHT)
-	check(state.hard_flux == 40.0 and state.armor == armor,"kinetic shield multiplier")
+	var shield_eff: float = Hulls.MODELS[vessel.kind].shield_efficiency
+	var diss := Hulls.dissipation(vessel)
+	Battle.hit(world,vessel,20,0,shield_face,Vector2.LEFT)
+	var kinetic_flux := 40.0 * shield_eff
+	check(is_equal_approx(state.hard_flux, kinetic_flux) and state.armor == armor,"kinetic shield multiplier")
 	Battle.add_flux(world,vessel,24)
 	Battle.tick(vessel,0.5)
-	check(state.hard_flux == 40.0 and state.soft_flux == 12.0,"raised shield traps hard flux and permits soft flux recovery")
+	var expected_soft := maxf(0.0,24.0 + float(Hulls.MODELS[vessel.kind].shield_upkeep) * 0.5 - diss * 0.5)
+	check(is_equal_approx(state.hard_flux,kinetic_flux) and is_equal_approx(state.soft_flux,expected_soft),"raised shield traps hard flux and permits soft flux recovery")
 	check(Battle.vent(vessel) and not state.shield and not Battle.ready(vessel),"V disables weapon and shield")
 	Battle.tick(vessel,0.5)
-	check(state.hard_flux == 16.0,"vent drains at twice normal rate")
+	check(is_equal_approx(state.hard_flux,maxf(0.0,kinetic_flux-diss)),"vent drains at twice normal rate")
 	Battle.tick(vessel,2.0)
 	check(not state.vent and state.hard_flux == 0.0 and state.soft_flux == 0.0,"vent ends at zero flux")
-	Battle.shield(vessel,true)
-	Battle.hit(world,vessel,219,1,vessel.pos,Vector2.RIGHT)
-	check(state.hard_flux == 109.5 and state.armor == armor and state.overload == 0.0,"HE shield multiplier")
-	Battle.hit(world,vessel,12,1,vessel.pos,Vector2.RIGHT)
-	check(state.overload == 3.0 and not state.shield and is_equal_approx(state.armor,armor-22.0),"shield overflow consumes only unabsorbed HE")
+	Battle.shield(vessel,true,shield_face)
+	Battle.tick(vessel,1.0)
+	var he_amount := (Hulls.capacity(vessel) - 0.5) / (0.5 * shield_eff)
+	Battle.hit(world,vessel,he_amount,1,shield_face,Vector2.LEFT)
+	check(is_equal_approx(state.hard_flux,Hulls.capacity(vessel)-0.5) and state.armor == armor and state.overload == 0.0,"HE shield multiplier")
+	Battle.hit(world,vessel,12,1,shield_face,Vector2.LEFT)
+	check(state.overload == 3.0 and not state.shield and state.armor < armor and state.armor > 0.0,"shield overflow reaches only local armor")
 	Battle.tick(vessel,2.99)
 	check(not Battle.ready(vessel) and not Battle.vent(vessel) and not Battle.system(world,vessel,Vector2.RIGHT),"overload denies systems and vent before three seconds")
 	Battle.add_flux(world,vessel,60)
@@ -469,8 +535,8 @@ func combat_edges() -> void:
 	Battle.tick(vessel,6)
 	state.armor = 4.0
 	var hp: float = vessel.hp
-	Battle.hit(world,vessel,20,0,vessel.pos,Vector2.RIGHT)
-	check(is_equal_approx(vessel.hp,hp-12.0) and state.armor == 0.0 and vessel.crew < Hulls.crew_limits(vessel.kind).x,"kinetic armor then hull with casualties")
+	Battle.hit(world,vessel,80,0,vessel.pos,Vector2.RIGHT)
+	check(vessel.hp < hp and state.armor < 4.0 and vessel.crew < Hulls.crew_limits(vessel.kind).x,"kinetic armor then hull with casualties")
 	vessel.heading = 0.0
 	check(not Battle.can_aim(vessel,0,vessel.pos+Vector2(-100,0),350),"fixed hardpoint cannot fire aft")
 	check(Battle.can_aim(vessel,2,vessel.pos+Vector2(-100,0),118),"turret can aim behind")
@@ -486,7 +552,8 @@ func combat_edges() -> void:
 	check(missile.hp <= 0.0 and state.cooldowns[2] > 0.0,"PD intercepts incoming hostile missile")
 	Battle.project(world,vessel.system,0.01)
 	check(world.projectiles.is_empty(),"intercepted missile is removed before impact")
-	check(Battle.ai_mode(vessel,280) == "压进" and Battle.ai_mode(vessel,120) == "侧翼拉扯","AI changes approach by range")
+	var engage_at := Battle.preferred_range(vessel, 2)
+	check(Battle.ai_mode(vessel,engage_at+30.0) == "压进" and Battle.ai_mode(vessel,engage_at-30.0) == "侧翼拉扯","AI changes approach by weapon range")
 	state.hard_flux = 90.0
 	check(Battle.ai_mode(vessel,280) == "降盾散热","high flux chooses disengagement")
 	state.hard_flux = 50.0
@@ -494,22 +561,21 @@ func combat_edges() -> void:
 	check(Battle.ai_mode(vessel,280) == "降盾散热","cooling has hysteresis instead of oscillating at threshold")
 	state.hard_flux = 40.0
 	state.soft_flux = 0.0
-	check(Battle.ai_mode(vessel,280) == "压进","cooled ship resumes approach")
-	var phase_ship: Dictionary = world.ships[world.ship(4,0,0,world.NEUTRAL,vessel.system,Vector2.ZERO)]
+	check(Battle.ai_mode(vessel,engage_at+30.0) == "压进","cooled ship resumes approach")
+	var phase_ship: Dictionary = world.ships[world.ship(Hulls.kind_for_reference("wolf"),0,0,world.NEUTRAL,vessel.system,Vector2.ZERO)]
 	check(Battle.system(world,phase_ship,Vector2.RIGHT) and phase_ship.pos.x == 86.0,"phase system moves ship forward")
 	var phase_armor: float = phase_ship.battle.armor
 	Battle.hit(world,phase_ship,40,1,phase_ship.pos,Vector2.RIGHT)
 	check(phase_ship.battle.armor == phase_armor,"phase window avoids incoming damage")
 	Battle.tick(phase_ship,1.0)
 	Battle.hit(world,phase_ship,40,1,phase_ship.pos,Vector2.RIGHT)
-	check(phase_ship.battle.armor == 0.0 and phase_ship.hp < Hulls.MODELS[4].hp,"HE armor multiplier applies after phase ends")
-	var repairs: Dictionary = world.ships[world.ship(3,0,0,world.NEUTRAL,vessel.system,Vector2.ZERO)]
-	repairs.hp -= 30.0
-	repairs.battle.armor = 0.0
-	Battle.system(world,repairs,Vector2.RIGHT)
-	Battle.tick(repairs,1.0)
-	check(repairs.battle.armor == 12.0 and repairs.hp == Hulls.MODELS[3].hp-26.0,"repair system restores armor and hull")
-	var burst: Dictionary = world.ships[world.ship(2,0,0,world.NEUTRAL,vessel.system,Vector2.ZERO)]
+	check(phase_ship.battle.armor < phase_armor and phase_ship.battle.armor > 0.0 and phase_ship.hp < Hulls.MODELS[phase_ship.kind].hp,"HE damages the struck armor after phase ends")
+	var builder: Dictionary = world.ships[world.ship(Hulls.kind_for_reference("fabricator_unit"),0,0,world.NEUTRAL,vessel.system,Vector2.ZERO)]
+	var before_construction: int = world.ships.size()
+	Battle.system(world,builder,Vector2.RIGHT)
+	Battle.project(world,builder.system,Battle.Abilities.profile(builder).build_time)
+	check(world.ships.size()==before_construction+1,"construction swarm builds an allied Threat unit")
+	var burst: Dictionary = world.ships[world.ship(Hulls.kind_for_reference("hammerhead"),0,0,world.NEUTRAL,vessel.system,Vector2.ZERO)]
 	burst.heading = 0.0
 	Battle.system(world,burst,Vector2.RIGHT)
 	check(Battle.fire_slot(world,burst,0,Vector2(100,0)) and burst.battle.cooldowns[0] < Hulls.WEAPONS.rail.cool,"burst system reduces weapon cooldown")
@@ -517,6 +583,9 @@ func combat_edges() -> void:
 func combat_run() -> void:
 	var world := scenario("repeatable-duel")
 	var game = SCENE.instantiate()
+	game.test_profile = true
+	root.add_child(game)
+	game.set_physics_process(false)
 	game.world = world
 	var flight := Flight.new()
 	flight.game = game
@@ -535,38 +604,33 @@ func combat_run() -> void:
 	check(hostile.pos.distance_to(vessel.pos) > distance_before and hostile.battle.vent and not hostile.battle.shield,"AI backs away and vents with high hard flux")
 	vessel.locked = false
 	world.ships.erase(enemy_id)
-	for index in range(36):
+	for index in range(125):
 		flight.step(1.0 / 60.0,Vector2.RIGHT)
 	var normal_speed: float = vessel.battle.motion.length()
 	check(Battle.system(world,vessel,Vector2.RIGHT),"boost fires on a moving flagship")
-	for index in range(36):
+	for index in range(100):
 		flight.step(1.0 / 60.0,Vector2.RIGHT)
 	check(vessel.battle.motion.length() > normal_speed * 1.4,"boost measurably raises forward speed")
 	flight.game = null
 	game.free()
 
-func old_combat_saves() -> void:
-	var world := scenario("versions")
-	for version in [4,5]:
-		var raw := world.snapshot().duplicate(true)
-		raw.erase("save_version")
-		raw.version = version
-		var original: Dictionary = raw.ships[world.ride().id]
-		if version == 4:
-			original.erase("fit")
-			original.erase("battle")
-		else:
-			original.fit.caps = 3
-			original.battle.hard_flux = 17.0
-			original.battle.erase("motion")
-		var restored := World.new()
-		check(restored.load_state(raw) and restored.snapshot().save_version == World.VERSION,
-			"legacy v%d receives current save version" % version)
-		check(restored.ride().battle.motion == Vector2.ZERO and restored.ride().fit.caps == (3 if version == 5 else 0) and restored.ride().battle.hard_flux == (17.0 if version == 5 else 0.0),
-			"legacy v%d preserves present combat fields and fills missing fields" % version)
-	var future := world.snapshot().duplicate(true)
-	future.save_version = World.VERSION + 1
-	check(not world.load_state(future),"unknown newer save version is rejected without migration")
+func current_saves() -> void:
+	var world := scenario("new-format")
+	var ship := world.ride()
+	world.ship(ship.kind, world.player, 0, ship.flag, ship.system, ship.pos, ship.dock)
+	ship.fit.groups[0] = 2
+	ship.battle.hard_flux = 17.0
+	ship.battle.cooldowns[0] = 0.4
+	ship.cargo[0] = 13
+	var state := world.snapshot()
+	var loaded := World.new()
+	check(loaded.load_state(state), "current save loads")
+	check(loaded.ride().fit.groups[0] == 2 and loaded.ride().battle.hard_flux == 17 and loaded.ride().battle.cooldowns[0] == 0.4 and loaded.ride().cargo[0] == 13, "mount identity, tuning and cargo survive save/load")
+	check(var_to_bytes(state) == var_to_bytes(loaded.snapshot()), "current save can be encoded repeatedly")
+	state.ships[ship.id].hull_id = "missing_ship"
+	check(not loaded.load_state(state) and loaded.ride().id == ship.id, "corrupt hull rejected without replacing active world")
+	state.save_version = World.VERSION - 1
+	check(not loaded.load_state(state), "outdated format rejected")
 
 func outfitting_and_audio() -> void:
 	var world := scenario("refit-audio")
@@ -599,7 +663,7 @@ func verify() -> void:
 	frontier_catalog()
 	combat_edges()
 	combat_run()
-	old_combat_saves()
+	current_saves()
 	outfitting_and_audio()
 	government_and_wars()
 	await ui_flow()

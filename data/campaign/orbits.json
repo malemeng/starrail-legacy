@@ -1,0 +1,10 @@
+{
+  "stellar_mu": 26000.0,
+  "reference_star_radius": 9000.0,
+  "rock_mu_density": 0.000000016,
+  "giant_mu_density": 0.000000008,
+  "softening": 20.0,
+  "surface_spin_speed": [4.0, 8.0],
+  "station_spin_days": [270.0, 650.0],
+  "binary_outer_orbit_ratio": 5.5
+}

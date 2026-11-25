@@ -48,7 +48,7 @@ static func deliver(world) -> bool:
 		return false
 	vessel.cargo[0] -= DELIVERY
 	world.ports[commission.target].stock[0] += DELIVERY
-	world.credit(world.player, PAYOUT)
+	world.credit(world.player, PAYOUT,vessel,"货运委托")
 	world.active().first_berth = true
 	world.active().first_berth_return = false
 	world.contracts.erase(world.player)
@@ -64,7 +64,7 @@ static func return_to_port(world) -> bool:
 	if actor.loc != origin(world) or not actor.get("first_berth", false) or actor.get("first_berth_return", false):
 		return false
 	actor.first_berth_return = true
-	world.credit(actor.id, BONUS)
+	world.credit(actor.id, BONUS,world.ride(),"返航津贴")
 	world.event("晨曦航务局结清了 %s 的首航返程津贴。" % actor.name)
 	return true
 

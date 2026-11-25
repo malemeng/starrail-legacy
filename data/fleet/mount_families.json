@@ -1,0 +1,10 @@
+{
+  "energy":    {"source":"ENERGY",    "label":"能量", "color":"#69baff", "accepts":["energy"]},
+  "ballistic": {"source":"BALLISTIC", "label":"实弹", "color":"#e4ac61", "accepts":["ballistic"]},
+  "missile":   {"source":"MISSILE",   "label":"导弹", "color":"#86cd80", "accepts":["missile"]},
+  "hybrid":    {"source":"HYBRID",    "label":"混合", "color":"#d99bdf", "accepts":["energy","ballistic"]},
+  "synergy":   {"source":"SYNERGY",   "label":"协同", "color":"#6edac8", "accepts":["energy","missile"]},
+  "composite": {"source":"COMPOSITE", "label":"复合", "color":"#c9d67a", "accepts":["ballistic","missile"]},
+  "universal": {"source":"UNIVERSAL", "label":"通用", "color":"#eae9df", "accepts":["energy","ballistic","missile"]},
+  "builtin":   {"source":"BUILT_IN",  "label":"内置", "color":"#afacb5", "accepts":["energy","ballistic","missile"]}
+}

@@ -1,0 +1,14 @@
+{
+  "core_size":[0.88,0.82],
+  "span_per_step":2.64,
+  "link_width":0.16,
+  "modules": [
+    {"span":420,"skin":0,"footprint":[0.93,0.66]}, {"span":650,"skin":1,"footprint":[0.86,0.89]},
+    {"span":920,"skin":2,"footprint":[0.96,0.91]}, {"span":740,"skin":3,"footprint":[0.78,0.78]},
+    {"span":720,"skin":1,"footprint":[0.83,0.81]}, {"span":500,"skin":0,"footprint":[0.98,0.62]},
+    {"span":560,"skin":1,"footprint":[0.72,0.9]}, {"span":580,"skin":1,"footprint":[0.86,0.70]},
+    {"span":660,"skin":2,"footprint":[0.94,0.78]}, {"span":450,"skin":0,"footprint":[0.93,0.72]}
+  ],
+  "capital_yard": 1080,
+  "outposts": {"rift_pirates":{"span":540,"skin":2},"ember_cult":{"span":460,"skin":3}}
+}

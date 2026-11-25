@@ -1,0 +1,506 @@
+{
+  "personal_gift": {"cost":35,"interval_days":30,"opinion":18,"loyalty":8},
+  "negotiated_truce": {"days":360,"base_reparations":240,"per_held_port":18,"minimum_opinion":-55},
+  "board_canvass": {
+    "minimum_trust": 35,
+    "incumbent_premium": 25,
+    "switch_margin": 10,
+    "ambition_weight": 0.30,
+    "diplomacy_weight": 0.75
+  },
+  "stats": [
+    "diplomacy",
+    "martial",
+    "stewardship",
+    "intrigue",
+    "learning",
+    "prowess"
+  ],
+  "traits": [
+    {
+      "id": "cautious",
+      "stats": [
+        1,
+        3,
+        1,
+        2,
+        2,
+        -1
+      ],
+      "vector": [
+        -58,
+        10,
+        -8,
+        -5,
+        12,
+        45,
+        -12,
+        0
+      ]
+    },
+    {
+      "id": "ambitious",
+      "stats": [
+        1,
+        2,
+        1,
+        3,
+        -1,
+        2
+      ],
+      "vector": [
+        65,
+        -28,
+        55,
+        40,
+        -26,
+        8,
+        15,
+        25
+      ]
+    },
+    {
+      "id": "compassionate",
+      "stats": [
+        4,
+        0,
+        0,
+        -1,
+        2,
+        1
+      ],
+      "vector": [
+        10,
+        75,
+        15,
+        -35,
+        60,
+        8,
+        50,
+        5
+      ]
+    },
+    {
+      "id": "pragmatic",
+      "stats": [
+        0,
+        0,
+        4,
+        1,
+        2,
+        1
+      ],
+      "vector": [
+        -5,
+        -8,
+        18,
+        25,
+        5,
+        70,
+        0,
+        -40
+      ]
+    }
+  ],
+  "personality": [
+    "boldness",
+    "compassion",
+    "energy",
+    "greed",
+    "honor",
+    "rationality",
+    "sociability",
+    "zeal"
+  ],
+  "lifestyles": [
+    {
+      "id": "treaties",
+      "name": "外交 · 谈判",
+      "stat": "diplomacy"
+    },
+    {
+      "id": "ceremony",
+      "name": "外交 · 威望",
+      "stat": "diplomacy"
+    },
+    {
+      "id": "kinship",
+      "name": "外交 · 家主",
+      "stat": "diplomacy"
+    },
+    {
+      "id": "strategy",
+      "name": "军事 · 战略",
+      "stat": "martial"
+    },
+    {
+      "id": "command",
+      "name": "军事 · 指挥",
+      "stat": "martial"
+    },
+    {
+      "id": "security",
+      "name": "军事 · 镇守",
+      "stat": "martial"
+    },
+    {
+      "id": "industry",
+      "name": "管理 · 工业",
+      "stat": "stewardship"
+    },
+    {
+      "id": "ledger",
+      "name": "管理 · 财政",
+      "stat": "stewardship"
+    },
+    {
+      "id": "administration",
+      "name": "管理 · 行政",
+      "stat": "stewardship"
+    },
+    {
+      "id": "intelligence",
+      "name": "谋略 · 情报",
+      "stat": "intrigue"
+    },
+    {
+      "id": "influence",
+      "name": "谋略 · 拉拢",
+      "stat": "intrigue"
+    },
+    {
+      "id": "coercion",
+      "name": "谋略 · 威慑",
+      "stat": "intrigue"
+    },
+    {
+      "id": "medicine",
+      "name": "学识 · 医疗",
+      "stat": "learning"
+    },
+    {
+      "id": "scholarship",
+      "name": "学识 · 研究",
+      "stat": "learning"
+    },
+    {
+      "id": "faith",
+      "name": "学识 · 信仰",
+      "stat": "learning"
+    },
+    {
+      "id": "navigation",
+      "name": "行旅 · 领航",
+      "stat": "prowess"
+    },
+    {
+      "id": "expedition",
+      "name": "行旅 · 探索",
+      "stat": "prowess"
+    },
+    {
+      "id": "survival",
+      "name": "行旅 · 生存",
+      "stat": "prowess"
+    }
+  ],
+  "governments": [
+    {
+      "id": "feudal",
+      "name": "世袭领",
+      "authority": "legitimacy",
+      "description": "世袭与贵族契约"
+    },
+    {
+      "id": "republic",
+      "name": "议会共和国",
+      "authority": "votes",
+      "description": "任期与选票"
+    },
+    {
+      "id": "oligarchy",
+      "name": "商团寡头",
+      "authority": "wealth",
+      "description": "商会理事席位"
+    },
+    {
+      "id": "junta",
+      "name": "军政府",
+      "authority": "command",
+      "description": "战功与舰队支持"
+    },
+    {
+      "id": "corporate",
+      "name": "公司领",
+      "authority": "shares",
+      "description": "董事会持股"
+    },
+    {
+      "id": "administrative",
+      "name": "行政总督领",
+      "authority": "merit",
+      "description": "履历与总督任命"
+    },
+    {
+      "id": "nomadic",
+      "name": "迁徙船团",
+      "authority": "dominance",
+      "description": "资源迁徙与朝贡"
+    },
+    {
+      "id": "celestial",
+      "name": "星廷官署",
+      "authority": "exam",
+      "description": "考试、功绩与国库"
+    },
+    {
+      "id": "shogunate",
+      "name": "双府军政",
+      "authority": "command",
+      "description": "家族拥立军府"
+    },
+    {
+      "id": "mandala",
+      "name": "圣港朝贡网",
+      "authority": "faith",
+      "description": "朝贡与仪式威望"
+    }
+  ],
+  "projects": [
+    {
+      "id": "lab",
+      "name": "总部实验室",
+      "days": 90,
+      "materials": [
+        [
+          1,
+          8
+        ],
+        [
+          12,
+          4
+        ]
+      ],
+      "benefit": "research"
+    },
+    {
+      "id": "teleport",
+      "name": "舰桥传送研究",
+      "days": 150,
+      "materials": [
+        [
+          10,
+          20
+        ],
+        [
+          12,
+          8
+        ]
+      ],
+      "benefit": "teleport"
+    },
+    {
+      "id": "embassy",
+      "name": "总部大使馆",
+      "days": 90,
+      "materials": [
+        [
+          1,
+          10
+        ],
+        [
+          3,
+          8
+        ]
+      ],
+      "benefit": "diplomacy"
+    },
+    {
+      "id": "restore_gate",
+      "name": "重连古星门",
+      "days": 180,
+      "materials": [
+        [
+          1,
+          20
+        ],
+        [
+          12,
+          12
+        ],
+        [
+          14,
+          8
+        ]
+      ],
+      "benefit": "gate"
+    },
+    {
+      "id": "terraform",
+      "name": "行星生态改造",
+      "days": 360,
+      "materials": [
+        [
+          5,
+          40
+        ],
+        [
+          3,
+          30
+        ],
+        [
+          10,
+          60
+        ]
+      ],
+      "benefit": "habitat"
+    }
+  ],
+  "origins": [
+    "边境飞行员",
+    "商团经纪",
+    "船坞技师"
+  ],
+  "styles": [
+    "军武",
+    "商业",
+    "打捞"
+  ],
+  "systems": [
+    "奎宿",
+    "风暴",
+    "长夜",
+    "乌木",
+    "青铜",
+    "白鲸",
+    "断矛",
+    "灰潮",
+    "海镜",
+    "残阳",
+    "远岸",
+    "黎明"
+  ],
+  "faction_presets": [
+    [
+      "赤矛边防军",
+      3,
+      0,
+      "e39461"
+    ],
+    [
+      "曙铁共和国",
+      1,
+      1,
+      "65c4c9"
+    ],
+    [
+      "长辉诸侯领",
+      0,
+      0,
+      "a895e2"
+    ],
+    [
+      "九环商会",
+      2,
+      1,
+      "96bb73"
+    ],
+    [
+      "赫弧企业领",
+      4,
+      1,
+      "edc176"
+    ],
+    [
+      "新岸公社",
+      1,
+      2,
+      "db7f9d"
+    ],
+    [
+      "白鲸舰团",
+      3,
+      2,
+      "7899db"
+    ],
+    [
+      "灯塔守护领",
+      0,
+      2,
+      "bea798"
+    ]
+  ],
+  "deployment": {
+    "starter": "kite",
+    "home_miner": "shepherd",
+    "home_carrier": "condor",
+    "capital_stock": [
+      "onslaught",
+      "atlas"
+    ],
+    "tutorial_raider": "kite",
+    "raiders": [
+      "hound_d_pirates",
+      "kite_pirates",
+      "lasher",
+      "wolf_d_pirates",
+      "shrike_pirates",
+      "manticore_pirates"
+    ],
+    "guards": [
+      [
+        "wolf",
+        "lasher",
+        "hammerhead",
+        "brawler",
+        "enforcer",
+        "centurion",
+        "sunder",
+        "manticore"
+      ],
+      [
+        "kite",
+        "omen",
+        "vigilance",
+        "tempest",
+        "centurion_LG",
+        "scarab"
+      ],
+      [
+        "lasher",
+        "wayfarer",
+        "condor",
+        "vanguard",
+        "brawler",
+        "shrike"
+      ]
+    ],
+    "traders": [
+      [
+        "buffalo_hegemony",
+        "tarsus",
+        "mule",
+        "wayfarer",
+        "colossus",
+        "atlas"
+      ],
+      [
+        "buffalo",
+        "gemini",
+        "tarsus",
+        "phaeton",
+        "dram",
+        "colossus",
+        "atlas"
+      ],
+      [
+        "mule",
+        "buffalo",
+        "tarsus",
+        "dram",
+        "colossus",
+        "atlas"
+      ]
+    ]
+  }
+}

@@ -1,0 +1,6 @@
+[
+  {"name": "护卫舰级", "representative": "kite", "canvas": [80, 56], "world_units_per_pixel": 0.52, "tuning_limit": 10, "rupture_strength": 0.83},
+  {"name": "驱逐舰级", "representative": "buffalo", "canvas": [112, 80], "world_units_per_pixel": 0.77, "tuning_limit": 20, "rupture_strength": 1},
+  {"name": "巡洋舰级", "representative": "dominator", "canvas": [152, 108], "world_units_per_pixel": 0.99, "tuning_limit": 30, "rupture_strength": 1.26},
+  {"name": "主力舰级", "representative": "onslaught", "canvas": [208, 144], "world_units_per_pixel": 1.25, "tuning_limit": 50, "rupture_strength": 1.55}
+]
