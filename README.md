@@ -1,5 +1,7 @@
 # 星轨遗产 · Windows 试玩版
 
+[下载 Windows 64 位试玩版（ZIP）](https://github.com/malemeng/starrail-legacy/releases/latest/download/StarrailLegacy-Windows-x64.zip)
+
 星门在两百年前熄灭。旧帝国来不及撤走，边疆学会用舰队、债务和联姻维持航线。你在晨曦自由港登记，从一艘小船和一张账单开始。
 
 ## 运行
