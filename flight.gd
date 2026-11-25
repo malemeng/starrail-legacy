@@ -372,11 +372,12 @@ func tow() -> void:
 		if not is_finite(closest):
 			game.say("没有可接收本舰的友好泊位。")
 			return
-	vessel.layer = false
+	if not world.berth(vessel, home_id):
+		game.say("拖航未出发：请先开启应答器（T）。" if not vessel.transponder and world.is_regular(world.ports[home_id]) else "拖航未出发：目的港拒绝停靠。")
+		return
 	vessel.raid = world.NEUTRAL
 	vessel.fuel = maxf(vessel.fuel, 12)
 	world.credit(world.player, -mini(world.active().wallet, 60),vessel,"拖航")
-	world.berth(vessel, home_id)
 	world.tick(18)
 	game.galaxy = false
 	game.tab = "港口"
@@ -407,6 +408,9 @@ func issue(order: int, focus: int = 0, selection: Array = []) -> int:
 		return 0
 	var designated: Dictionary = world.ships.get(focus, {})
 	if order == 2 and (designated.is_empty() or designated.id == lead.id or not Battle.available(designated, lead.system) or not visible_contact(lead,designated)):
+		return 0
+	if order == 2 and escort(designated,lead):
+		game.say("无法命令编队集火自己的护航舰。")
 		return 0
 	var count := 0
 	for other in world.ships.values():
@@ -511,7 +515,7 @@ func load_factor(vessel: Dictionary) -> float:
 	return 1.0 + 0.45 * cargo / maxf(1.0, float(Hulls.MODELS[vessel.kind].cargo))
 
 func personality(vessel: Dictionary) -> int:
-	if game.autopilot and vessel.id == game.world.ride().get("id", 0):
+	if vessel.id == game.world.ride().get("id", 0) and game.autopilot:
 		var tactic_personality := [0, 1, 3, 1, 4]
 		return tactic_personality[clampi(int(game.combat_tactic), 0, tactic_personality.size() - 1)]
 	var captain: Dictionary = game.world.people.get(vessel.captain, {})
@@ -729,7 +733,7 @@ func _engage_target(other: Dictionary, foe: Dictionary, delta: float) -> void:
 		return
 	var desired := Battle.preferred_range(other, p)
 	var dist := gap.length()
-	var tactic: int = int(game.combat_tactic) if (game.autopilot and other.id == world.ride().get("id", 0)) else -1
+	var tactic: int = int(game.combat_tactic) if (other.id == world.ride().get("id", 0) and game.autopilot) else -1
 	var move := Vector2.ZERO
 	if tactic == 0:
 		# 激进突击：贴近主炮射程并保持侧移压迫，不后退放风筝

@@ -201,6 +201,13 @@ static func decode(data: Dictionary, wares: int) -> Dictionary:
 		var raw: Variant = copy.ships[id]
 		if not raw is Dictionary or raw.get("id") != id:
 			return {}
+		if raw.has("privateer_firm") and copy.firms.has(raw.privateer_firm):
+			# Company-funded privateers used to list the director as their personal owner.
+			if not raw.has("firm") and not raw.has("station_owner") and not raw.has("lease") and not raw.has("charter"):
+				raw.owner = 0
+				raw.firm = raw.privateer_firm
+			elif raw.get("firm",0) != raw.privateer_firm:
+				raw.erase("privateer_firm")
 		if raw.has("firm") and (not copy.firms.has(raw.firm) or raw.get("owner") != 0 or raw.has("lease") or raw.has("station_owner") or raw.has("charter")):
 			return {}
 		if raw.get("owner",0) != 0 and raw.has("station_owner") and copy.ports.has(raw.station_owner):
@@ -209,6 +216,14 @@ static func decode(data: Dictionary, wares: int) -> Dictionary:
 		var ship := Ship.decode(raw, wares)
 		if ship.is_empty() or ship.get("system", -1) not in range(copy.systems.size()):
 			return {}
+		var principal: int = copy.firms.get(ship.get("firm",0),{}).get("director",ship.get("owner",0))
+		var issuer: int = copy.regent if principal != 0 and principal == copy.regency and copy.player == copy.regent else principal
+		for order in ship.get("order_queue", []).duplicate():
+			if not order.has("issuer"):
+				if copy.people.has(issuer):
+					order.issuer = issuer
+				else:
+					ship.order_queue.erase(order)
 		if not ship.get("dock") is int or (ship.dock != 0 and not copy.ports.has(ship.dock)):
 			return {}
 		if not ship.get("captain") is int or (ship.captain != 0 and not copy.people.has(ship.captain)):
@@ -227,11 +242,16 @@ static func decode(data: Dictionary, wares: int) -> Dictionary:
 			var contract: Variant = ship.construction_contract
 			if not contract is Dictionary or not copy.ports.has(contract.get("home",0)) or not contract.get("status","") in ["active","working","returning","available"]:
 				return {}
-			if not copy.people.has(ship.captain) or ship.owner != 0 or not Hulls.can_build_station(ship.kind) or not contract.get("fee") is int or contract.fee <= 0:
+			# Older captures transferred the hull and removed its captain but retained the yard contract.
+			var transferred: bool = copy.people.has(ship.get("owner",0)) or ship.has("firm")
+			var abandoned_prize: bool = ship.captain == 0 and ship.get("job") == {} and ship.get("crew",0) > 0
+			if Hulls.can_build_station(ship.kind) and (transferred or abandoned_prize):
+				ship.erase("construction_contract")
+			elif not copy.people.has(ship.captain) or ship.owner != 0 or not Hulls.can_build_station(ship.kind) or not contract.get("fee") is int or contract.fee <= 0:
 				return {}
-			if contract.status == "active" and (not copy.people.has(contract.get("client",0)) or contract.get("site",-1) != 0):
+			elif contract.status == "active" and (not copy.people.has(contract.get("client",0)) or contract.get("site",-1) != 0):
 				return {}
-			if contract.status == "working" and copy.ports.get(contract.get("site",0),{}).get("construction_ship",0) != id:
+			elif contract.status == "working" and copy.ports.get(contract.get("site",0),{}).get("construction_ship",0) != id:
 				return {}
 		copy.ships[id] = ship
 	for id in copy.people:

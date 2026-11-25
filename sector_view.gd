@@ -483,7 +483,7 @@ func galaxy_map(world, vessel: Dictionary) -> void:
 		for ship in world.ships.values():
 			if ship.id == vessel.id:
 				continue
-			var own_ship: bool = world.oversees(ship.owner)
+			var own_ship: bool = world.can_operate(ship)
 			if own_ship:
 				if ship.layer and ship.dock == 0:
 					var spos := screen(ship.galpos)
@@ -582,7 +582,7 @@ func local_map(world, vessel: Dictionary, system_index: int) -> void:
 			draw_texture_rect(spark, Rect2(pos + Vector2(-22 + phase * 6,-14),Vector2(40,40)), false)
 		if not own:
 			ink(pos + Vector2(13, 23), world.flag_name(other.flag), tone, 12)
-			if other.locked or (world.oversees(other.owner) and other.job.get("kind","") == "护航"):
+			if other.locked or (world.can_operate(other) and other.job.get("kind","") == "护航"):
 				tag(pos + Vector2(13,39), other.battle.ai, tone)
 			if game.selected_target == other.id:
 				draw_arc(pos, radius + 14, 0, TAU, 36, GOLD, 1, true)

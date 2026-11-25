@@ -17,7 +17,22 @@ func expect(ok: bool, label: String) -> void:
 func _initialize() -> void:
 	run.call_deferred()
 
+func bilateral_trade() -> void:
+	var world := World.new()
+	world.new_game({"seed":"bilateral-embargo","systems":12,"factions":3,"overrides":[{"regime":4},{"regime":4},{"regime":4}]})
+	var first: Dictionary = world.firms[world.factions[0].firm]
+	var second: Dictionary = world.firms[world.factions[1].firm]
+	var third: Dictionary = world.firms[world.factions[2].firm]
+	first.embargo = 1
+	second.embargo = 0
+	third.embargo = 0
+	world.set_treaty(0,1,-1)
+	WarPeace.add_score(world,0,1,40)
+	expect(WarPeace.sign_peace(world,0,1,[],false,[],true),"sign bilateral trade clause")
+	expect(first.embargo == world.NEUTRAL and second.embargo == world.NEUTRAL and third.embargo == 0,"signatories lift their mutual bans without changing a third party's policy")
+
 func run() -> void:
+	bilateral_trade()
 	var world := World.new()
 	world.new_game({"seed":"war-peace-test","systems":24,"factions":5,"avatar":{"name":"Test Admiral"}})
 	var f0 := 0

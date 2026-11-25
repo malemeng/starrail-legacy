@@ -52,7 +52,9 @@ func run() -> void:
 	var supply_frames := 0
 	var close_frames := 0
 	game.speed = 1
-	for frame in 90:
+	var frames_per_day: int = roundi(60.0/game.flight.FLIGHT_DAYS_PER_SECOND)
+	var frames := 6*frames_per_day
+	for frame in frames:
 		var old_escort: Vector2 = escort.pos
 		var old_tender: Vector2 = tender.pos
 		var old_close: Vector2 = close.pos
@@ -60,20 +62,22 @@ func run() -> void:
 		escort_frames += int(absf(escort.pos.distance_to(old_escort)-step_escort)<0.03)
 		supply_frames += int(absf(tender.pos.distance_to(old_tender)-step_tender)<0.03)
 		close_frames += int(game.flight.tactical_escorts.has(close.id) and absf(close.pos.distance_to(old_close)-Vector2(close.battle.motion).length()/60.0)<0.04)
-		if frame==74:
-			check(delivery.pos.distance_to(second.pos)<0.01 and delivery.cargo[fuel]==7 and is_equal_approx(second.fuel,20.0),"a rendezvous alone does not run the six-day cargo transfer early")
-	check(world.day==6 and escort_frames==90 and supply_frames==90,"all 90 actual frames use the configured speeds including the sixth day")
-	check(close_frames==90,"a nearby escort receives exactly its physical steering displacement without any strategic pulse")
+		if frame==5*frames_per_day-1:
+			var gap: float = delivery.pos.distance_to(second.pos)
+			var reach := 2.0*float(world.Economy.Defenses.geometry(second.kind).module_radius)+4.0
+			check(gap > 0.01 and gap <= reach + 0.01 and delivery.cargo[fuel]==7 and is_equal_approx(second.fuel,20.0),"tender can wait alongside without overlapping or transferring before the sixth day")
+	check(world.day==6 and escort_frames==frames and supply_frames==frames,"all frames use the configured speeds including the sixth day")
+	check(close_frames==frames,"a nearby escort receives exactly its physical steering displacement without any strategic pulse")
 	check(delivery.cargo[fuel]==0 and is_equal_approx(second.fuel,27.0),"normal duty dispatch transfers exactly seven fuel after real rendezvous")
 	background.tick(6)
 	check(escort.pos.distance_to(background.ships[escort.id].pos)<0.1 and tender.pos.distance_to(background.ships[tender.id].pos)<0.1 and absf(escort.pos.distance_to(start_escort)-180.0)<0.1 and absf(tender.pos.distance_to(start_tender)-240.0)<0.1,"off-screen and visible service cover identical six-day distances")
 	escort.pos = lead.pos+Vector2(621,0)
-	for i in 3:
+	for i in ceili(3.0/step_escort)+1:
 		game.step_simulation(Vector2.ZERO,false,false,Vector2.ZERO,false)
 	check(game.flight.tactical_escorts.has(escort.id) and escort.order_queue.size()==1,"the same distant escort rejoins the tactical formation while retaining its order")
 	check(world.berth(lead,port),"flagship reaches the escorted destination")
 	world.Economy.step_ship(world,escort,0.0)
 	check(escort.travel.get("port",0)==port,"escort resumes the physical docking route when the commander reaches port")
-	print("Fleet rendezvous %d/%d. Far escort %d/90, tender %d/90, tactical escort %d/90." % [checks-failures,checks,escort_frames,supply_frames,close_frames])
+	print("Fleet rendezvous %d/%d. Across %d frames: far escort %d, tender %d, tactical escort %d." % [checks-failures,checks,frames,escort_frames,supply_frames,close_frames])
 	game.free()
 	quit(1 if failures else 0)

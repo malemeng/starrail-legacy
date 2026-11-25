@@ -49,8 +49,8 @@ static func in_truce(world, firm_id: int, target_flag: int) -> bool:
 	return until > int(world.day)
 
 static func at_war(world, firm_id: int, target_flag: int) -> bool:
-	ensure_state(world)
-	return world.campaign.company_wars.has(_key(firm_id, target_flag))
+	var wars: Dictionary = world.campaign.get("company_wars",{})
+	return not wars.is_empty() and wars.has(_key(firm_id, target_flag))
 
 static func active_wars_for_firm(world, firm_id: int) -> Array:
 	ensure_state(world)
@@ -151,10 +151,10 @@ static func declare_war(world, firm_id: int, target_flag: int) -> Dictionary:
 	world.campaign.casus_belli.erase(k)
 	firm.treasury = int(firm.treasury) - CHARTER_FEE
 	firm["last_company_war"] = int(world.day)
-	firm["embargo"] = target_flag
 	var war := {
 		"firm_id": firm_id,
 		"target_flag": target_flag,
+		"embargo": target_flag,
 		"pretext": cb.get("kind", "tariff_dispute"),
 		"pretext_label": cb.get("label", "商业纠纷"),
 		"started": int(world.day),
@@ -169,6 +169,21 @@ static func declare_war(world, firm_id: int, target_flag: int) -> Dictionary:
 	])
 	return {"ok": true, "war": war}
 
+## Player and agent commands share the same signing authority and peace terms.
+static func director_action(world, action: String, firm_id: int, target_flag: int, kind: String = "tariff_dispute") -> Dictionary:
+	if world.firms.get(firm_id,{}).get("director",-1) != world.player:
+		return {"ok":false,"reason":"只有现任董事长可以代表公司办理私掠外交。"}
+	match action:
+		"start_pretext":
+			return start_pretext(world,firm_id,target_flag,kind)
+		"declare_company_war":
+			return declare_war(world,firm_id,target_flag)
+		"sign_company_peace":
+			var war: Dictionary = world.campaign.get("company_wars",{}).get(_key(firm_id,target_flag),{})
+			var ahead := float(war.get("firm_score",0)) >= float(war.get("target_score",0)) + 4.0
+			return sign_peace(world,firm_id,target_flag,"firm" if ahead else "white")
+	return {"ok":false,"reason":"未知的公司外交指令。"}
+
 ## Conclude a company war with commercial reparations and a truce.
 static func sign_peace(world, firm_id: int, target_flag: int, winner: String = "firm") -> Dictionary:
 	ensure_state(world)
@@ -180,7 +195,8 @@ static func sign_peace(world, firm_id: int, target_flag: int, winner: String = "
 	world.campaign.company_truces[k] = int(world.day) + TRUCE_DAYS
 	var firm: Dictionary = world.firms.get(firm_id, {})
 	var faction: Dictionary = world.factions.get(target_flag, {})
-	if int(firm.get("embargo", world.NEUTRAL)) == target_flag:
+	# Earlier saves stored the wartime ban in the company's discretionary embargo field.
+	if not war.has("embargo") and int(firm.get("embargo", world.NEUTRAL)) == target_flag:
 		firm.embargo = world.NEUTRAL
 	var rep := 0
 	if winner == "firm" and not firm.is_empty() and not faction.is_empty():
@@ -208,35 +224,15 @@ static func sign_peace(world, firm_id: int, target_flag: int, winner: String = "
 	])
 	return {"ok": true, "reparations": rep, "war": war}
 
-static func _ship_firm_ids(world, ship: Dictionary) -> Array[int]:
-	var out: Array[int] = []
-	var pf := int(ship.get("privateer_firm", 0))
-	if pf != 0 and is_pure_company(world, pf):
-		out.append(pf)
-	if int(ship.get("flag", world.NEUTRAL)) == world.NEUTRAL:
-		var owner_id := int(ship.get("owner", 0))
-		if owner_id > 0:
-			for fid in world.firms:
-				var firm: Dictionary = world.firms[fid]
-				if int(firm.get("director", 0)) == owner_id and is_pure_company(world, int(fid)) and not out.has(int(fid)):
-					out.append(int(fid))
-	return out
-
 ## Check whether two combatant/ship dictionaries are hostile due to a company privateer war.
 static func ships_hostile(world, source: Dictionary, target: Dictionary) -> bool:
 	if world.campaign.get("company_wars", {}).is_empty():
 		return false
 	var t_flag := int(target.get("flag", world.NEUTRAL))
-	if t_flag >= 0:
-		for s_firm in _ship_firm_ids(world, source):
-			if at_war(world, s_firm, t_flag):
-				return true
 	var s_flag := int(source.get("flag", world.NEUTRAL))
-	if s_flag >= 0:
-		for t_firm in _ship_firm_ids(world, target):
-			if at_war(world, t_firm, s_flag):
-				return true
-	return false
+	var s_firm := int(source.get("firm",source.get("privateer_firm",0)))
+	var t_firm := int(target.get("firm",target.get("privateer_firm",0)))
+	return (t_flag >= 0 and s_firm > 0 and at_war(world,s_firm,t_flag)) or (s_flag >= 0 and t_firm > 0 and at_war(world,t_firm,s_flag))
 
 static func _pick_raider_target(world, target_flag: int, hq_system: int) -> Dictionary:
 	var best_score := INF
@@ -276,7 +272,8 @@ static func _commission_privateer(world, firm_id: int, firm: Dictionary) -> int:
 	firm.treasury = int(firm.treasury) - cost
 	world.Treasury.post(world, hq, cost, "公司私掠购舰")
 	var captain: int = world.random_person(world.NEUTRAL, hq.id)
-	var sid: int = world.ship(chosen, int(firm.director), captain, world.NEUTRAL, hq.system, hq.pos)
+	var sid: int = world.ship(chosen, 0, captain, world.NEUTRAL, hq.system, hq.pos)
+	world.ships[sid].firm = firm_id
 	world.ships[sid]["privateer_firm"] = firm_id
 	world.ships[sid]["job"] = {"kind": "护航", "system": hq.system}
 	return sid
@@ -291,7 +288,7 @@ static func _advance_pretexts(world) -> void:
 			expired.append(k)
 			continue
 		if not bool(cb.get("ready", false)):
-			cb.progress = int(cb.get("progress", 0)) + 1
+			cb.progress = clampi(world.day - int(cb.started), 0, int(cb.required))
 			if cb.progress >= int(cb.get("required", 10)):
 				var spec: Dictionary = PRETEXT_KINDS.get(cb.get("kind", "tariff_dispute"), PRETEXT_KINDS["tariff_dispute"])
 				cb.ready = true
@@ -306,6 +303,7 @@ static func _advance_pretexts(world) -> void:
 
 static func _advance_wars(world) -> void:
 	var to_close: Array[Array] = []
+	var acted := {}
 	for k in world.campaign.company_wars.keys():
 		var war: Dictionary = world.campaign.company_wars[k]
 		var fid := int(war.get("firm_id", 0))
@@ -318,23 +316,34 @@ static func _advance_wars(world) -> void:
 		if hq.is_empty():
 			continue
 		var raiders: Array[int] = []
+		var reserve: Array[int] = []
+		var fleet_count := 0
 		for ship in world.ships.values():
-			if int(ship.get("privateer_firm", 0)) == fid:
+			if int(ship.get("privateer_firm", 0)) != fid:
+				continue
+			fleet_count += 1
+			if ship.locked or ship.captain == world.player or acted.has(ship.id):
+				continue
+			if ship.job.get("kind","") != "私掠":
+				reserve.append(int(ship.id))
+			elif ship.job.get("target_flag",-1) == tflag:
 				raiders.append(int(ship.id))
-		if raiders.size() < 2 and int(firm.get("treasury", 0)) >= MIN_WAR_TREASURY:
+		var front_limit := 2 if active_wars_for_firm(world,fid).size() == 1 else 1
+		raiders.append_array(reserve.slice(0,maxi(0,front_limit-raiders.size())))
+		if raiders.size() < front_limit and fleet_count < 2 and int(firm.get("treasury", 0)) >= MIN_WAR_TREASURY:
 			var bought := _commission_privateer(world, fid, firm)
 			if bought > 0:
 				raiders.append(bought)
 		var target_port := _pick_raider_target(world, tflag, int(hq.system))
 		for sid in raiders:
-			var vessel: Dictionary = world.ships.get(sid, {})
-			if vessel.is_empty() or vessel.locked:
-				continue
+			var vessel: Dictionary = world.ships[sid]
+			acted[sid] = true
 			if vessel.job.get("kind", "") != "私掠":
 				if target_port.is_empty():
 					continue
 				var transit := clampi(int(world.distance(vessel.system, target_port.system) / 90.0), 5, 16)
-				vessel.dock = 0
+				if vessel.dock != 0:
+					world.depart(vessel)
 				vessel.job = {
 					"kind": "私掠", "target": target_port.id, "target_flag": tflag,
 					"origin_system": vessel.system, "started": int(world.day), "eta": int(world.day) + transit,
@@ -369,10 +378,12 @@ static func _advance_wars(world) -> void:
 				war.target_score = float(war.target_score) + 6.0
 				world.destruction(vessel.id)
 			elif st.defense <= 0:
-				var loot := mini(1800, maxi(600, roundi(float(world.Treasury.available(st)) * 0.15)))
-				if loot > 0:
-					world.Treasury.post(world, st, -loot, "私掠劫掠")
+				var available: int = world.Treasury.available(st)
+				var loot := mini(available, clampi(roundi(available * 0.15), 600, 1800))
+				if loot > 0 and world.Treasury.post(world, st, -loot, "私掠劫掠"):
 					firm.treasury = int(firm.treasury) + loot
+				else:
+					loot = 0
 				war.raids = int(war.get("raids", 0)) + 1
 				war.looted = int(war.get("looted", 0)) + loot
 				war.firm_score = float(war.firm_score) + 10.0
@@ -448,5 +459,6 @@ static func _npc_company_ai(world) -> void:
 static func daily(world) -> void:
 	ensure_state(world)
 	_advance_pretexts(world)
-	_advance_wars(world)
-	_npc_company_ai(world)
+	if world.day % 6 == 0:
+		_advance_wars(world)
+		_npc_company_ai(world)

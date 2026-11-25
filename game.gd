@@ -870,7 +870,7 @@ func say(message: String) -> void:
 func viewed_ship() -> Dictionary:
 	if watch_ship_id > 0:
 		var watched: Dictionary = world.ships.get(watch_ship_id, {})
-		if not watched.is_empty() and world.oversees(watched.owner):
+		if not watched.is_empty() and world.can_operate(watched):
 			return watched
 		watch_ship_id = 0
 	return world.ride()
@@ -917,15 +917,19 @@ func _exit_tree() -> void:
 		agent_bridge.publish("shutdown.json", {"ok": true, "reason": "game_exited"})
 
 func _smolagents_script() -> String:
-	var candidates := [
-		ProjectSettings.globalize_path("res://tools/smolagents_runner.py"),
-		OS.get_executable_path().get_base_dir().path_join("tools/smolagents_runner.py"),
-		OS.get_executable_path().get_base_dir().get_base_dir().path_join("tools/smolagents_runner.py"),
-	]
-	for p in candidates:
-		if FileAccess.file_exists(p):
-			return p
-	return ""
+	var path := OS.get_executable_path().get_base_dir().path_join("tools/smolagents_runner.py")
+	if OS.has_feature("editor"):
+		path = ProjectSettings.globalize_path("res://tools/smolagents_runner.py")
+	return path if FileAccess.file_exists(path) else ""
+
+func launch_agent_runner(args: PackedStringArray) -> int:
+	var bundled := args[0].get_base_dir().path_join("agent-runtime/pythonw.exe")
+	var interpreter := bundled
+	if not FileAccess.file_exists(bundled):
+		if not OS.has_feature("editor"):
+			return -1
+		interpreter = "python"
+	return OS.create_process(interpreter, PackedStringArray(["-B", "-X", "utf8"]) + args, false)
 
 func _load_smolagents_cfg() -> Dictionary:
 	var def := {
@@ -1074,11 +1078,11 @@ func _start_takeover(cfg: Dictionary) -> void:
 			"--max-steps", str(int(cfg.get("max_steps", 40))),
 			"--goal", str(cfg.get("goal", "")),
 		])
-		smolagents_pid = OS.create_process("python", py_args, false)
+		smolagents_pid = launch_agent_runner(py_args)
 		if smolagents_pid > 0:
 			say("已启动 smolagents 全流程托管（PID %d · 模型 %s），日志保存于会话目录。" % [smolagents_pid, str(cfg.get("model", ""))])
 		else:
-			say("拉起 Python smolagents 失败，请确认已安装 python 与 smolagents。")
+			say("托管程序启动失败，请检查发行包中的 tools/agent-runtime 目录。")
 	else:
 		say("已开启外部 Agent 桥接目录：" + dir)
 
@@ -1428,7 +1432,7 @@ func _collect_alerts() -> Array[Dictionary]:
 			if is_instance_valid(side_panel): side_panel.show()
 			refresh()})
 	for ship in world.ships.values():
-		if not world.oversees(ship.owner):
+		if not world.can_operate(ship):
 			continue
 		var max_hp := float(world.HULL_HP[ship.kind])
 		if float(ship.hp) < max_hp * 0.5:
@@ -1583,7 +1587,7 @@ func update_header() -> void:
 		update_campaign_button()
 		var ship_count := 0
 		for owned in world.ships.values():
-			if world.oversees(owned.owner):
+			if world.can_operate(owned):
 				ship_count += 1
 		for btn in tabs.get_children():
 			if btn is Button and (btn.text == "资产" or btn.text.begins_with("资产 (")):

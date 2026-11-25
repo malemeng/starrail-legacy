@@ -5,11 +5,14 @@ const Hulls = preload("res://hull_catalog.gd")
 const Economy = preload("res://economy.gd")
 const Industry = preload("res://scripts/economy/industry.gd")
 
-static func rights(world, station: Dictionary) -> bool:
+static func rights(world, station: Dictionary, sponsor: int = 0) -> bool:
 	if station.is_empty() or station.build > 0:
 		return false
+	if sponsor == 0:
+		sponsor = world.player
 	var faction: Dictionary = world.factions.get(station.flag, {})
-	return world.oversees(station.owner) or world.oversees(station.get("manager", 0)) or faction.get("leader", -1) == world.player
+	var offices := [station.owner, station.get("manager", 0)]
+	return sponsor > 0 and (sponsor in offices or faction.get("leader", -1) == sponsor or (sponsor == world.regent and world.regency > 0 and world.regency in offices))
 
 static func start_project(world, port_id: int, id: String) -> bool:
 	var station: Dictionary = world.ports.get(port_id, {})
@@ -34,7 +37,7 @@ static func start_project(world, port_id: int, id: String) -> bool:
 static func teleport(world, ship_id: int) -> bool:
 	var actor: Dictionary = world.active()
 	var vessel: Dictionary = world.ships.get(ship_id, {})
-	if actor.loc == 0 or vessel.is_empty() or vessel.dock == 0 or not world.oversees(vessel.owner):
+	if actor.loc == 0 or vessel.is_empty() or vessel.dock == 0 or not world.can_operate(vessel):
 		return false
 	if not ("teleport" in world.campaign.unlocks.get(actor.loc, []) and "teleport" in world.campaign.unlocks.get(vessel.dock, [])):
 		return false
@@ -192,12 +195,19 @@ static func advance_boarding(world, vessel: Dictionary) -> void:
 		if not previous.is_empty():
 			previous.ship = 0
 			previous.loc = world.systems[enemy.system].ports.front() if not world.systems[enemy.system].ports.is_empty() else 0
+		world.DiplomaticTrade.release_for(world,0,enemy.id)
+		enemy.captain = 0
 		Economy.clear_assignments(world,enemy)
-		enemy.erase("charter")
+		for key in ["charter", "lease", "station_owner", "firm", "engaged_by", "privateer_firm", "blockade_owner", "crisis_unit", "organization"]:
+			enemy.erase(key)
+		for other in world.ships.values():
+			if other.has("engaged_by"):
+				other.engaged_by.erase(enemy.id)
 		enemy.owner = Hulls.operator_id(vessel)
+		if vessel.has("firm"):
+			enemy.firm = vessel.firm
 		enemy.flag = vessel.flag
 		enemy.raid = world.NEUTRAL
-		enemy.captain = 0
 		enemy.crew = survivors
 		enemy.locked = false
 		world.event("登舰组接管了%s。" % world.HULLS[enemy.kind])
@@ -218,7 +228,7 @@ static func daily(world) -> void:
 	for site in world.campaign.projects.keys():
 		var project: Dictionary = world.campaign.projects[site]
 		var station: Dictionary = world.ports[site]
-		if station.build > 0 or station.owner != project.sponsor and world.factions.get(station.flag, {}).get("leader", -1) != project.sponsor:
+		if not rights(world, station, project.sponsor):
 			continue
 		if project.progress % 6 == 0 and not Industry.consume(station, {Industry.Ware.ENERGY: 1}):
 			continue

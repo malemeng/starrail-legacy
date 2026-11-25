@@ -88,7 +88,7 @@ func securities() -> void:
 	var lead := world.ride()
 	var home: Dictionary = world.ports[lead.dock]
 	var founder: int = world.random_person(world.NEUTRAL,home.id)
-	world.people[founder].wallet=1250
+	world.people[founder].wallet=4000
 	var merchant: Dictionary = world.ships[world.ship(0,founder,founder,world.NEUTRAL,0,home.pos,home.id)]
 	var company: int = world.incorporate("组包航运",founder,home.id,false)
 	world.firms[company].treasury = 50000

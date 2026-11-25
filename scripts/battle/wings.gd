@@ -214,7 +214,7 @@ static func launch(world, carrier: Dictionary, enemy: Dictionary, wing: Dictiona
 		var heading := axis.rotated((i-(salvo-1)*0.5)*0.045)
 		var missile := flight in ["guided","rocket","bomb"]
 		world.projectiles.append({"pos":wing.pos,"vel":heading*weapon.speed,"speed":weapon.speed,"life":maxf(0.55,weapon.range/weapon.speed*1.9),
-			"system":carrier.system,"ship":carrier.id,"flag":carrier.flag,"raid":carrier.raid,"credit":Hulls.operator_id(carrier),
+			"system":carrier.system,"ship":carrier.id,"flag":carrier.flag,"raid":carrier.raid,"credit":Hulls.combat_credit(carrier),
 			"damage":weapon.damage*wing.count_live*multiplier,"type":int(weapon.type),"emp":float(weapon.get("emp",0.0))*wing.count_live,
 			"missile":missile,"target":enemy.id if flight == "guided" else 0,"hp":9.0,"wing_id":wing.id})
 

@@ -1503,14 +1503,13 @@ func powers(body: Node) -> void:
 		if world.CompanyWars.is_pure_company(world, firm_id):
 			var wars: Array = world.CompanyWars.active_wars_for_firm(world, firm_id)
 			for cw in wars:
-				UIKit.badge(ccard, "私掠交战：%s（%s · %.0f:%.0f · 劫掠 %d 次）" % [
+				UIKit.badge(ccard, "私掠交战并禁运：%s（%s · %.0f:%.0f · 劫掠 %d 次）" % [
 					world.flag_name(int(cw.target_flag)), cw.get("pretext_label", "商业纠纷"),
 					float(cw.get("firm_score", 0.0)), float(cw.get("target_score", 0.0)), int(cw.get("raids", 0))], "danger")
 				if enterprise.director == world.player:
 					var tf := int(cw.target_flag)
 					UIKit.action_button(ccard, "私掠停战：" + world.flag_name(tf), func():
-						var w := "firm" if float(cw.get("firm_score", 0.0)) >= float(cw.get("target_score", 0.0)) + 4.0 else "white"
-						var res: Dictionary = world.CompanyWars.sign_peace(world, firm_id, tf, w)
+						var res: Dictionary = world.CompanyWars.director_action(world,"sign_company_peace",firm_id,tf)
 						result(bool(res.get("ok", false)), "已签订商业和约。", String(res.get("reason", ""))), "primary")
 			var cb_map: Dictionary = world.campaign.get("casus_belli", {})
 			for cb in cb_map.values():
@@ -1540,11 +1539,11 @@ func powers(body: Node) -> void:
 				UIKit.action_button(act_row, "制造战争借口", func():
 					var tf := int(flags[war_target.selected])
 					var kind: String = pretext_keys[pretext_pick.selected]
-					var res: Dictionary = world.CompanyWars.start_pretext(world, firm_id, tf, kind)
+					var res: Dictionary = world.CompanyWars.director_action(world,"start_pretext",firm_id,tf,kind)
 					result(bool(res.get("ok", false)), "已开始制造公司战争借口。", String(res.get("reason", ""))), "default", not cb_ready, "已存在就绪借口")
 				UIKit.action_button(act_row, "凭借口私掠宣战 (¢1500)", func():
 					var tf := int(flags[war_target.selected])
-					var res: Dictionary = world.CompanyWars.declare_war(world, firm_id, tf)
+					var res: Dictionary = world.CompanyWars.director_action(world,"declare_company_war",firm_id,tf)
 					result(bool(res.get("ok", false)), "公司已发起私掠宣战。", String(res.get("reason", ""))), "danger", cb_ready and int(enterprise.get("treasury", 0)) >= world.CompanyWars.CHARTER_FEE, "需先完成借口制造且公司资金 ≥ ¢1500")
 
 func history(body: Node) -> void:

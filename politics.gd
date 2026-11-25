@@ -518,7 +518,8 @@ static func conquer(world, port_id: int, attacker: int, owner: int = 0) -> void:
 	if Society.civil_capture(world, port_id, attacker):
 		return
 	var station: Dictionary = world.ports[port_id]
-	var previous: int = station.flag
+	var previous: int = station.get("occupied_from", station.flag)
+	station.erase("occupied_from")
 	world.StationEquity.freeze(world,station)
 	var old_manager: int = station.manager
 	if old_manager != 0:
@@ -535,22 +536,33 @@ static func conquer(world, port_id: int, attacker: int, owner: int = 0) -> void:
 	station.defense = 22
 	station.since = world.day
 	world.event("%s 被 %s 从 %s 手中夺取。" % [station.name, world.flag_name(attacker), world.flag_name(previous)])
-	if world.factions.has(previous):
-		var left: Array = world.systems_owned(previous)
-		if left.is_empty():
-			world.factions[previous].alive = false
-			world.refresh_all_tariffs()
-			world.factions[previous].capital = 0
-			for vessel in world.ships.values():
-				if vessel.flag == previous:
-					vessel.flag = world.NEUTRAL
-					Economy.clear_assignments(world,vessel)
-			world.event(world.flag_name(previous) + " 失去了最后一座空间站。")
-		elif world.factions[previous].capital == port_id:
-			world.factions[previous].capital = left[0]
-			var former_company: int = world.factions[previous].get("firm",0)
-			if former_company != 0:
-				world.firms[former_company].hq = left[0]
+	reconcile_capital(world, previous)
+
+static func reconcile_capital(world, flag: int) -> void:
+	var faction: Dictionary = world.factions.get(flag, {})
+	if not faction.get("alive", false):
+		return
+	var capital: Dictionary = world.ports.get(faction.capital, {})
+	if capital.get("occupied_from", capital.get("flag", -1)) == flag and capital.build == 0:
+		return
+	var replacement := 0
+	for site in world.ports.values():
+		if site.build == 0 and site.get("occupied_from", site.flag) == flag:
+			replacement = site.id
+			if site.flag == flag:
+				break
+	faction.capital = replacement
+	if replacement != 0:
+		if faction.get("firm", 0) != 0:
+			world.firms[faction.firm].hq = replacement
+		return
+	faction.alive = false
+	world.refresh_all_tariffs()
+	for vessel in world.ships.values():
+		if vessel.flag == flag:
+			vessel.flag = world.NEUTRAL
+			Economy.clear_assignments(world,vessel)
+	world.event(world.flag_name(flag) + " 失去了最后一座空间站。")
 
 static func found(world, name_text: String, port_id: int, regime: int = 0, founder_id: int = -1) -> bool:
 	var fid: int = world.player if founder_id <= 0 else founder_id
@@ -732,7 +744,6 @@ static func military(world) -> void:
 			v.dock = 0
 			v.job = {"kind": "攻城", "target": target.id, "origin_system": v.system, "started": world.day, "eta": world.day + transit}
 	WarPeace.daily(world)
-	world.CompanyWars.daily(world)
 	if world.day % 6 == 0:
 		for pid in world.people:
 			var member: Dictionary = world.people[pid]

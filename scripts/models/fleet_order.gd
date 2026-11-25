@@ -10,6 +10,8 @@ static func carries_goods(kind: String) -> bool:
 static func valid(order: Variant, ware_count: int) -> bool:
 	if not order is Dictionary or not order.get("kind") in LABELS or not order.get("port") is int or order.port <= 0:
 		return false
+	if order.has("issuer") and (not order.issuer is int or order.issuer <= 0):
+		return false
 	if order.kind == "escort_to":
 		return order.get("commander") is int and order.commander > 0
 	if carries_goods(order.kind):

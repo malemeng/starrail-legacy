@@ -8,13 +8,21 @@ static func location(world) -> int:
 	return int(world.active().get("loc",0)) if ship.is_empty() else int(ship.dock)
 
 ## Cargo belongs to the operator, and has to be present at the same physical berth.
-static func cargo_ship(world, actor: Dictionary, port: int) -> int:
+static func cargo_ship(world, actor: Dictionary, port: int, company_market: bool = false) -> int:
 	var ship: Dictionary = world.ships.get(actor.get("ship",0),{})
-	if port<=0 or ship.is_empty() or ship.dock!=port or ship.captain!=actor.id or world.Hulls.operator_id(ship)!=actor.id:
+	if port<=0 or ship.is_empty() or ship.dock!=port or ship.captain!=actor.id:
 		return 0
-	if ship.job.get("kind","") in ["站属贸易","站属采矿","施工配送"] or ship.has("construction_contract") or ship.has("firm"):
+	if ship.job.get("kind","") in ["站属贸易","站属采矿","施工配送"] or ship.has("construction_contract"):
 		return 0
-	return ship.id
+	if ship.has("firm"):
+		return ship.id if company_market and actor.id == world.player else 0
+	return ship.id if world.Hulls.operator_id(ship) == actor.id else 0
+
+static func market_firm(world, kind: String, port: int) -> int:
+	if kind != "station":
+		return 0
+	var ship := cargo_ship(world,world.active(),port,true)
+	return world.ships.get(ship,{}).get("firm",0)
 
 static func available_cargo(ship: Dictionary, ware: int) -> int:
 	var quantity: int = ship.cargo[ware]
@@ -128,7 +136,7 @@ static func asset(rows: Array, kind: String, id: int, units: int, name: String, 
 	if units>0:
 		rows.append({"kind":kind,"id":id,"quantity":units,"name":name,"unit_price":price})
 
-static func assets(world, kind: String, id: int, black: bool = false) -> Array:
+static func assets(world, kind: String, id: int, black: bool = false, market_company: int = 0) -> Array:
 	var side := participant(world,kind,id,black)
 	var result := []
 	if side.is_empty():
@@ -139,7 +147,12 @@ static func assets(world, kind: String, id: int, black: bool = false) -> Array:
 		"company": cash = world.firms[id].treasury
 		"station": cash = world.ports[id].get("black_treasury",0) if black else world.Treasury.available(world.ports[id])
 		"faction": cash = world.factions[id].treasury
-	asset(result,"cash",0,cash,"信用点",1)
+	if market_company != 0 and kind == "player":
+		side.ship = world.active().ship
+		var company_cash: int = world.firms[market_company].treasury
+		asset(result,"cash",0,maxi(cash,company_cash),"信用点（货物用公司账户 ¢%d，私人账户 ¢%d）" % [company_cash,cash],1)
+	else:
+		asset(result,"cash",0,cash,"信用点",1)
 	var local: Dictionary = world.ports[location(world)]
 	if side.ship != 0 or (kind=="station" and side.local):
 		for ware in world.WARES.size():

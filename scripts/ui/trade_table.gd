@@ -371,7 +371,8 @@ func refresh_preview() -> void:
 		if quick_count < 1 or quick_count > quick_max:
 			var reason := "请输入 1 至 %d 之间的数量。" % quick_max if quick_max > 0 else "当前可交易数量为零，请检查库存、货舱和资金。"
 			meter.present({"score":0,"accepted":false,"label":"无法成交","reason":reason})
-			totals.text = "可用余额 ¢%d" % world.active().wallet
+			var firm_id := int(catalog.get("market_firm",0))
+			totals.text = "公司可用余额 ¢%d" % world.firms[firm_id].treasury if firm_id != 0 else "可用余额 ¢%d" % world.active().wallet
 			submit.disabled = true
 			return
 		var quote: Vector2i = world.Economy.lot_quote(world.ports[partner_id],quick_ware,quick_count,quick_buy,world.active().origin,black)
@@ -381,12 +382,16 @@ func refresh_preview() -> void:
 		want = [goods if quick_buy else cash]
 	var preview: Dictionary = world.DiplomaticTrade.preview(world,kind,partner_id,give,want,black)
 	meter.present({"accepted":preview.accepted,"score":preview.score,"label":preview.get("label","愿意签字" if preview.accepted else "尚未同意"),"reason":preview.reason,"factors":preview.get("factors",[])})
-	var balance: int = world.active().wallet + amount_of(want,"cash",0) - amount_of(give,"cash",0)
+	var firm := int(preview.get("client_firm",0))
+	var funds: int = world.firms[firm].treasury if firm != 0 else world.active().wallet
+	var balance: int = funds + amount_of(want,"cash",0) - amount_of(give,"cash",0)
 	if quick_ware >= 0:
 		totals.text = "%s ¢%d　·　成交后余额 ¢%d" % ["共付" if quick_buy else "共收",amount_of(give if quick_buy else want,"cash",0),balance]
 	else:
 		totals.text = "给出估值 ¢%d　·　索取估值 ¢%d　·　成交后余额 ¢%d" % [preview.give_value,preview.want_value,balance]
 	totals.text += tax_summary(preview)
+	if firm != 0:
+		totals.text += "　·　" + str(world.firms[firm].name) + "账户"
 	status.visible = not message.is_empty()
 	submit.disabled = not preview.accepted
 

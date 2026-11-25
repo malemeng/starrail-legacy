@@ -89,7 +89,8 @@ func logistics() -> void:
 		world.credit(world.player,-shortfall)
 		world.Treasury.post(world,yard,shortfall,"船厂出资",false)
 		Economy.shipyard(world,yard)
-	check(yard.hulls[day_index] > before and yard.stock[1] == 150 - Hulls.MODELS[day_index].recipe, "shipyard consumes actual alloy")
+	var bill := Economy.Industry.vessel_recipe(Hulls.MODELS[day_index],yard.method)
+	check(yard.hulls[day_index] > before and yard.stock[1] == 150 - int(bill[Economy.Industry.Ware.ALLOY]), "shipyard consumes actual alloy")
 	world.berth(vessel, home)
 	world.credit(world.player, int(Economy.ship_quote(yard,0).price))
 	var spare := Economy.buy_ship(world, home, 0)
@@ -261,7 +262,8 @@ func government_and_wars() -> void:
 	var fleet_id := siege.ship(Hulls.kind_for_reference("onslaught"), 0, 0, 0, capital.system, capital.pos)
 	siege.ships[fleet_id].job = {"kind":"攻城","target":last_port,"arrived":true,"eta":siege.day}
 	Politics.military(siege)
-	check(capital.flag == 0 and not siege.factions[1].alive and siege.factions[1].capital == 0, "NPC elimination on loss of last port")
+	check(capital.flag == 0 and siege.factions[1].alive, "last port stays occupied until the peace settlement")
+	check(siege.WarPeace.sign_peace(siege,0,1,[last_port]) and not siege.factions[1].alive and siege.factions[1].capital == 0, "NPC elimination on permanent loss of last port")
 	for seed_index in range(6):
 		world = scenario("long-" + str(seed_index), false)
 		world.tick(10000)

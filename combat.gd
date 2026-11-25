@@ -422,7 +422,7 @@ static func _fire_slot_prepared(world, vessel: Dictionary, index: int, endpoint:
 		elif world.ships.get(target_id,{}).get("captain",0) == pilot:
 			flag_threat(world.ships[target_id],vessel.id)
 	var shot_state := {"pos":point, "vel":direction * spec.speed, "speed":spec.speed, "life":reach / maxf(spec.speed, 1.0),
-		"system":vessel.system,"ship":vessel.id,"flag":vessel.flag,"raid":vessel.raid,"credit":Hulls.operator_id(vessel),
+		"system":vessel.system,"ship":vessel.id,"flag":vessel.flag,"raid":vessel.raid,"credit":Hulls.combat_credit(vessel),
 		"damage":spec.damage * modifier.get("damage",1.0),"type":spec.type,"missile":missile,"target":target_id,"hp":14.0,"emp":spec.get("emp", 0.0)}
 	if spec.get("beam", false):
 		var end := point + direction * reach

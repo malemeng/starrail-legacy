@@ -72,7 +72,7 @@ func start_arena(p_game, slot_configs: Array, runner_script: String) -> bool:
 				"--goal", str(cfg.get("goal", "")),
 				"--rivals", "你是「%s」；同宇宙对手：%s" % [cname, "、".join(others)] if not others.is_empty() else "",
 			])
-			py_pid = OS.create_process("python", py_args, false)
+			py_pid = game.launch_agent_runner(py_args)
 		slots.append({
 			"slot": i + 1,
 			"name": cname,
@@ -171,7 +171,7 @@ func resume_arena(p_game, runner_script: String, resolve_creds: Callable, auto_l
 				"--goal", gtext,
 				"--rivals", "你是「%s」；同宇宙对手：%s" % [cname, "、".join(others)] if not others.is_empty() else "",
 			])
-			py_pid = OS.create_process("python", py_args, false)
+			py_pid = game.launch_agent_runner(py_args)
 		slots.append({
 			"slot": i + 1,
 			"name": cname,

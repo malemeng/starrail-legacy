@@ -122,6 +122,7 @@ func owner_built(kind: int) -> void:
 	var id := world.ship(kind,world.player,0,world.NEUTRAL,0,yard.pos,yard.id)
 	world.pilot(id)
 	var ship := world.ride()
+	world.active().wallet = int(Industry.CONSTRUCTION.foundation.credits)
 	world.depart(ship)
 	var body: Dictionary = world.systems[0].planets[0]
 	ship.pos = Vector2(body.pos)+Vector2.RIGHT*(body.radius+110.0)

@@ -4,7 +4,7 @@ const Hulls = preload("res://hull_catalog.gd")
 
 static func payload(vessel: Dictionary,kind: String,pos: Vector2,velocity: Vector2,life: float,damage: float) -> Dictionary:
 	return {"ordnance":kind,"pos":pos,"vel":velocity,"speed":velocity.length(),"life":life,"damage":damage,"type":2,"missile":false,
-		"target":0,"system":vessel.system,"ship":vessel.id,"flag":vessel.flag,"raid":vessel.raid,"credit":Hulls.operator_id(vessel),"hp":8.0}
+		"target":0,"system":vessel.system,"ship":vessel.id,"flag":vessel.flag,"raid":vessel.raid,"credit":Hulls.combat_credit(vessel),"hp":8.0}
 
 static func spawn(world,vessel: Dictionary,kind: String,pos: Vector2,velocity: Vector2,life: float,damage: float) -> Dictionary:
 	var shot := payload(vessel,kind,pos,velocity,life,damage)

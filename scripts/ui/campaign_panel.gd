@@ -184,7 +184,7 @@ func travel(body: Control) -> void:
 		return
 	if lead.dock == 0 and not lead.layer:
 		game.button(body,"向选定敌舰投送登舰队",func(): done(Operations.begin_boarding(world,game.selected_target),"登舰队已出发。"))
-	var escorts: Array = world.ships.values().filter(func(v): return world.oversees(v.owner) and v.id != lead.id)
+	var escorts: Array = world.ships.values().filter(func(v): return world.oversees(world.ship_principal(v)) and v.id != lead.id)
 	if escorts.is_empty():
 		return
 	var ids := escorts.map(func(v): return v.id)

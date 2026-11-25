@@ -162,7 +162,7 @@ static func unavailable(world, context: Dictionary, conditions: Dictionary) -> S
 					return "缺少对港务经理的有效把柄"
 			"prize_owned", "prize_capacity_gte":
 				var prize: Dictionary = world.ships.get(context.get("prize", 0), {})
-				if prize.get("owner", 0) != actor.id:
+				if prize.is_empty() or not world.oversees(world.ship_principal(prize)):
 					return "战利舰已不在名下"
 				if key == "prize_capacity_gte" and world.Hulls.crew_limits(prize.kind).y - prize.crew < int(value):
 					return "战利舰空余铺位不足"

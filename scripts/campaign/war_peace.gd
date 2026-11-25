@@ -94,13 +94,19 @@ static func occupy(world, port_id: int, attacker: int) -> void:
 		world.Politics.conquer(world, port_id, attacker)
 		return
 	_ensure_pact(pact)
-	if not station.has("occupied_from"):
-		station.occupied_from = defender
+	var original: int = station.get("occupied_from", defender)
+	if station.has("occupied_from"):
+		for relation in world.relations.values():
+			relation.get("occupied", {}).erase(port_id)
+	if attacker == original:
+		station.erase("occupied_from")
+	else:
+		station.occupied_from = original
+		pact.occupied[port_id] = attacker
 	station.flag = attacker
 	station.defense = 25
 	station.since = world.day
 	world.refresh_tariffs(station.system)
-	pact.occupied[port_id] = attacker
 	var is_capital: bool = world.factions.get(defender, {}).get("capital", 0) == port_id
 	add_score(world, attacker, defender, 55.0 if is_capital else 35.0)
 	var pflag := int(world.active().get("flag", -1))
@@ -248,14 +254,13 @@ static func sign_peace(world, proposer: int, defender: int, annex_ports: Array =
 		return false
 	var key: Vector2i = world.pair(proposer, defender)
 	var pact: Dictionary = world.relations[key]
-	var occupied: Dictionary = pact.get("occupied", {}).duplicate()
+	var occupied: Dictionary = pact.get("occupied", {})
 	var annexed_names: Array[String] = []
 	var released_names: Array[String] = []
 	for pid in annex_ports:
 		var port_id := int(pid)
 		var st: Dictionary = world.ports.get(port_id, {})
 		if not st.is_empty():
-			st.erase("occupied_from")
 			world.Politics.conquer(world, port_id, proposer)
 			_reward_war_merit(world, proposer, port_id)
 			annexed_names.append(st.name)
@@ -264,6 +269,7 @@ static func sign_peace(world, proposer: int, defender: int, annex_ports: Array =
 		var port_id := int(pid)
 		var st: Dictionary = world.ports.get(port_id, {})
 		if not st.is_empty():
+			var former: int = st.get("occupied_from", defender)
 			st.erase("occupied_from")
 			st.flag = world.NEUTRAL
 			st.owner = 0
@@ -271,19 +277,9 @@ static func sign_peace(world, proposer: int, defender: int, annex_ports: Array =
 			st.defense = maxi(18, int(st.defense))
 			world.refresh_tariffs(st.system)
 			world.Equity.update_operator(world, st)
+			world.Politics.reconcile_capital(world, former)
 			released_names.append(st.name)
 		occupied.erase(port_id)
-	for pid in occupied:
-		var port_id := int(pid)
-		var st: Dictionary = world.ports.get(port_id, {})
-		if st.is_empty():
-			continue
-		var original_owner := int(st.get("occupied_from", -1))
-		st.erase("occupied_from")
-		if original_owner >= 0 and world.factions.get(original_owner, {}).get("alive", false):
-			st.flag = original_owner
-			st.defense = maxi(18, int(st.defense))
-			world.refresh_tariffs(st.system)
 	var rep_paid := 0
 	if demand_reparations and world.factions.has(defender) and world.factions.has(proposer):
 		var loser_treasury := int(world.factions[defender].get("treasury", 0))
@@ -293,7 +289,8 @@ static func sign_peace(world, proposer: int, defender: int, annex_ports: Array =
 			world.factions[proposer].treasury += rep_paid
 	if open_trade:
 		for firm in world.firms.values():
-			if int(firm.get("embargo", -1)) in [proposer, defender]:
+			var issuer: int = firm.get("flag",world.NEUTRAL)
+			if (issuer == proposer and firm.embargo == defender) or (issuer == defender and firm.embargo == proposer):
 				firm.embargo = world.NEUTRAL
 		for st in world.ports.values():
 			if int(st.flag) in [proposer, defender]:
@@ -317,6 +314,24 @@ static func sign_peace(world, proposer: int, defender: int, annex_ports: Array =
 	var summary := "白和平" if parts.is_empty() else "，".join(parts)
 	world.event("【和约】%s 与 %s 停战（%s，休战 %d 日）。" % [world.flag_name(proposer), world.flag_name(defender), summary, TRUCE_DAYS])
 	return true
+
+static func end_occupation(world, station: Dictionary) -> void:
+	var original := int(station.occupied_from)
+	station.erase("occupied_from")
+	station.flag = original if world.factions.get(original, {}).get("alive", false) else world.NEUTRAL
+	station.defense = maxi(18, int(station.defense))
+	world.refresh_tariffs(station.system)
+
+static func restore_legacy_territory(world) -> void:
+	var wartime_ports := {}
+	for relation in world.relations.values():
+		if relation.state == -1:
+			wartime_ports.merge(relation.get("occupied", {}), true)
+	for site in world.ports.values():
+		if site.has("occupied_from") and wartime_ports.get(site.id, -1) != site.flag:
+			end_occupation(world, site)
+	for flag in world.factions:
+		world.Politics.reconcile_capital(world, flag)
 
 ## Daily war score accumulation from occupied/blockaded stations and AI peace checks.
 static func daily(world) -> void:

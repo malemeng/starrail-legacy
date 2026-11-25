@@ -6,6 +6,9 @@ const Flight = preload("res://flight.gd")
 const Harness = preload("res://tests/battle_mechanics.gd")
 
 class Arena extends Harness.Arena:
+	func ride() -> Dictionary:
+		return ships[1]
+
 	func ship(kind: int,owner: int,_captain: int,team: int,system: int,pos: Vector2) -> int:
 		var id:=ships.size()+1
 		var template: Dictionary=ships[1].duplicate(true)
@@ -55,6 +58,7 @@ func scenario(reference: String) -> void:
 	var kinetic: Dictionary=Hulls.WEAPONS.rail
 	var energy: Dictionary=Hulls.WEAPONS.pulse
 	var flight:=Flight.new()
+	flight.game = {"world":a,"autopilot":false}
 	if source in ["displacer","displacer_threat","displacer_degraded"]: s.motion=Vector2.UP*75
 	if source in ["orion_device","nova_burst"]: enemy.pos=Vector2.LEFT*float(spec.reach)*0.7
 	if source in ["forgevats","forgevats_station","fastmissileracks","extraction_protocol"]:

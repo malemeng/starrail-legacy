@@ -17,14 +17,15 @@ static func catalog(world, kind: String, id: int, black: bool = false) -> Dictio
 		return empty
 	var give := []
 	var physical: bool = partner.get("ship",0)!=0 or (kind=="station" and partner.local)
-	for row in Partners.assets(world,"player",world.player,black):
+	var firm := Partners.market_firm(world,kind,id)
+	for row in Partners.assets(world,"player",world.player,black,firm):
 		if row.kind=="ware" and not physical:
 			continue
 		if row.kind in ["company_share","station_share"] and (black or partner.ordinary_only or not handles_share(world,row.kind.trim_suffix("_share"),row.id,partner,false)):
 			continue
 		give.append(row)
 	var want := Partners.assets(world,kind,id,black)
-	return {"give":give,"want":want}
+	return {"give":give,"want":want,"market_firm":firm}
 
 static func reply(reason: String, representative: int = 0) -> Dictionary:
 	return {"accepted":false,"score":0,"threshold":60,"label":"尚未同意","factors":[reason],"reason":reason,"representative":representative,
@@ -160,7 +161,7 @@ static func normalized(lines: Array) -> Array:
 
 static func ship_for(world, kind: String, id: int, party: Dictionary) -> Dictionary:
 	if kind == "player":
-		return world.ships.get(Partners.cargo_ship(world,world.active(),Partners.location(world)),{})
+		return world.ships.get(Partners.cargo_ship(world,world.active(),Partners.location(world),party.kind == "station" and party.local),{})
 	return world.ships.get(party.get("ship",0),{}) if kind == "person" else {}
 
 static func check_side(world, partner: Dictionary, lines: Array, receiving: bool, black: bool, result: Dictionary) -> String:
@@ -351,6 +352,14 @@ static func evaluate(world, kind: String, id: int, offered: Array, requested: Ar
 	var result := reply("请添加交易条款。",partner.representative)
 	if give.size() != offered.size() or want.size() != requested.size() or (give.is_empty() and want.is_empty()):
 		return result
+	var terms := give + want
+	var posted: bool = kind == "station" and terms.all(func(row):return row.kind in ["cash","ware"])
+	var client_firm := 0
+	if terms.any(func(row):return row.kind == "ware"):
+		client_firm = Partners.market_firm(world,kind,id)
+		if client_firm != 0 and not posted:
+			return reply("公司货物只可兑换港口货物和公司货款。",partner.representative)
+	result.client_firm = client_firm
 	var offered_keys := {}
 	for item in give:
 		offered_keys["%s/%d"%[item.kind,item.id]] = true
@@ -364,7 +373,6 @@ static func evaluate(world, kind: String, id: int, offered: Array, requested: Ar
 	result.cash_delta = result.want_value-result.give_value
 	if issue.is_empty():
 		issue = capacity_issue(world,partner,give,want,black)
-	var posted: bool = kind == "station" and (give+want).all(func(row):return row.kind in ["cash","ware"])
 	if not posted and partner.get("ordinary_only",false):
 		issue = "本站柜台只执行挂牌商品交易。"
 	if issue.is_empty() and not posted and world.oversees(partner.representative):
@@ -383,7 +391,8 @@ static func evaluate(world, kind: String, id: int, offered: Array, requested: Ar
 		if requested_cash+tax_reserve > bid_credit and personal.wallet+bid_credit-requested_cash-tax_reserve < reserve:
 			issue = "%s 要保留必要的个人周转金。" % personal.name
 	result.score = clampi(roundi(60.0*float(result.give_value)/maxf(1,result.want_value)),0,100)
-	if issue.is_empty() and (payment>available_cash(world,"player",world.player) or requested_cash-bid_credit+tax_reserve>available_cash(world,kind,id,black)):
+	var budget := available_cash(world,"company",client_firm) if client_firm else available_cash(world,"player",world.player)
+	if issue.is_empty() and (payment>budget or requested_cash-bid_credit+tax_reserve>available_cash(world,kind,id,black)):
 		issue = "一方可支配资金不足。"
 	if issue.is_empty() and (give.is_empty() or want.is_empty()):
 		issue = "请给出双方的对价。"
@@ -446,6 +455,7 @@ static func receivable(d: Dictionary) -> int:
 
 static func escrow(world, d: Dictionary, withdraw: bool) -> void:
 	var sign := -1 if withdraw else 1
+	var client_firm := int(d.get("client_firm",0))
 	cash(world,d.kind,d.party,sign*int(d.tax_reserve),false)
 	if d.kind=="company" or (d.kind=="station" and not d.black):
 		var entity: Dictionary = world.firms[d.party] if d.kind=="company" else world.ports[d.party]
@@ -458,7 +468,10 @@ static func escrow(world, d: Dictionary, withdraw: bool) -> void:
 		for item in d[side]:
 			if item.kind == "cash":
 				var reserved_elsewhere: int = 0 if player_side else int(d.get("bid_credit",0))
-				cash(world,"player" if player_side else d.kind,d.client if player_side else d.party,sign*(int(item.quantity)-reserved_elsewhere),d.black and not player_side)
+				if player_side and client_firm != 0:
+					cash(world,"company",client_firm,sign*int(item.quantity),false)
+				else:
+					cash(world,"player" if player_side else d.kind,d.client if player_side else d.party,sign*(int(item.quantity)-reserved_elsewhere),d.black and not player_side)
 			elif item.kind == "ware":
 				var stock := inventory(world,d,player_side)
 				stock[item.id] += sign*int(item.quantity)
@@ -475,6 +488,8 @@ static func propose(world, kind: String, id: int, give: Array, want: Array, blac
 		"ship":world.ride().get("id",0),"dock":Partners.location(world),"partner_ship":info.partner_ship,"expires":world.day+int(Industry.RULES.equity_orders.period_days),
 		"tax":info.tax,"tax_reserve":info.tax_reserve,"tax_flag":info.tax_flag,"tax_name":info.tax_name,"tax_rate":world.ports[Partners.location(world)].get("tariff_rate",0.0),
 		"goods_given":info.goods_given,"goods_received":info.goods_received,"give_value":info.give_value,"want_value":info.want_value,"cash_delta":info.cash_delta}
+	if info.client_firm != 0:
+		d.client_firm = info.client_firm
 	world.campaign.diplomatic_deal = d
 	for side in ["give","want"]:
 		for item in d[side]:
@@ -576,7 +591,10 @@ static func finalize_cash(world, d: Dictionary, amount: int, to_player: bool) ->
 	var asset: Dictionary = world.ships.get(d.ship,{})
 	var commodities: bool = (d.give+d.want).all(func(row):return row.kind in ["ware","cash"])
 	var category := ("货物销售" if to_player else "货物采购") if commodities else "组合交易"
-	world.credit(d.client,delta,asset,category)
+	if d.get("client_firm",0) != 0:
+		world.Economy.pay(world,asset,delta,category)
+	else:
+		world.credit(d.client,delta,asset,category)
 	if d.kind == "station" and not d.black:
 		var site: Dictionary = world.ports[d.party]
 		var capital_receipt := 0
@@ -668,7 +686,8 @@ static func confirm(world, id: int) -> Dictionary:
 		var receiving: bool = side=="want"
 		for item in d[side]:
 			if item.kind=="ware":
-				valid = valid and Partners.cargo_ship(world,world.active(),d.dock)==d.ship and (d.kind!="person" or p.get("ship",0)==d.partner_ship)
+				var firm := int(d.get("client_firm",0))
+				valid = valid and Partners.market_firm(world,d.kind,d.dock)==firm and Partners.cargo_ship(world,world.active(),d.dock,firm != 0)==d.ship and (d.kind!="person" or p.get("ship",0)==d.partner_ship)
 			elif item.kind in ["company_share","station_share"]:
 				var scope := "company" if item.kind=="company_share" else "station"
 				valid = valid and holding(world,scope,item.id,d.kind if receiving else "player",d.party if receiving else d.client)>=item.quantity
@@ -720,6 +739,8 @@ static func valid(data: Dictionary) -> bool:
 	var tables := {"company":"firms","station":"ports","person":"people","faction":"factions"}
 	if not tables.has(d.get("kind")) or not data[tables[d.kind]].has(d.party):
 		return false
+	if d.has("client_firm") and (not data.firms.has(d.client_firm) or d.kind != "station" or d.party != d.dock or d.ship == 0):
+		return false
 	for ship in [d.ship,d.partner_ship]:
 		if ship != 0 and not data.ships.has(ship):
 			return false
@@ -734,6 +755,8 @@ static func valid(data: Dictionary) -> bool:
 		if normalized(rows).size()!=rows.size():
 			return false
 		for item in rows:
+			if d.has("client_firm") and item.kind not in ["cash","ware"]:
+				return false
 			if not item.get("value") is int or item.value<0:
 				return false
 			var key: String = "%s/%d"%[item.kind,item.id]

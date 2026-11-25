@@ -190,7 +190,7 @@ func verify() -> void:
 	expect(add != null and not add.disabled,"real fleet panel accepts orders")
 	if add:
 		add.pressed.emit()
-	expect(ship.order_queue == [{"kind":"dock","port":home.id}],"button appends order for selected ship and port")
+	expect(ship.order_queue == [{"kind":"dock","port":home.id,"issuer":world.player}],"button appends a signed order for selected ship and port")
 	expect(not game.flight.escort(ship,lead),"explicit order suppresses jump and docking with flagship")
 	var cancel := button(game.body,"撤单")
 	expect(cancel != null,"queued order visible for cancellation")

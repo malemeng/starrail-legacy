@@ -495,6 +495,14 @@ func change_faction_trust(flag: int, person: int, change: int, reason: String) -
 func set_treaty(first: int, second: int, state: int) -> void:
 	if first == second or first == NEUTRAL or second == NEUTRAL:
 		return
+	var previous := treaty(first, second)
+	if previous.state == -1:
+		if state == -1:
+			return
+		for port_id in previous.get("occupied", {}):
+			var station: Dictionary = ports.get(port_id, {})
+			if station.has("occupied_from") and station.flag == previous.occupied[port_id]:
+				WarPeace.end_occupation(self, station)
 	relations[pair(first, second)] = {"state": state, "since": day}
 	ShareExchange.audit(self)
 	if not campaign.get("equity_orders",{}).get("orders",{}).is_empty():
@@ -873,8 +881,9 @@ func mark_seen(system: int) -> void:
 			region.pirate_patrol = id
 			Outlaws.assign(ships[id], Outlaws.PIRATES, anchor)
 
-func oversees(owner: int) -> bool:
-	return owner != 0 and (owner == player or (regency == owner and player == regent))
+func oversees(owner: int, actor_id: int = 0) -> bool:
+	var actor := player if actor_id == 0 else actor_id
+	return owner != 0 and (owner == actor or (regency == owner and actor == regent))
 
 func ship_principal(vessel: Dictionary) -> int:
 	return firms.get(vessel.get("firm",0),{}).get("director",vessel.get("owner",0))
@@ -936,6 +945,7 @@ func berth(vessel: Dictionary, port_id: int) -> bool:
 		return false
 	if not can_dock(vessel, station):
 		return false
+	vessel.layer = false
 	vessel.system = station.system
 	vessel.pos = station.pos
 	vessel.dock = port_id
@@ -974,7 +984,7 @@ func depart(vessel: Dictionary) -> void:
 			if prev_dock != 0:
 				var wing := 0
 				for other in ships.values():
-					if other.id != vessel.id and other.dock == prev_dock and oversees(other.owner) and other.captain not in [0, player]:
+					if other.id != vessel.id and other.dock == prev_dock and oversees(ship_principal(other)) and other.captain not in [0, player] and other.get("order_queue",[]).is_empty():
 						if other.job.get("kind", "") == "护航" or other.get("fleet_role", "") in ["ATTACK", "INTERCEPT", "BOMBARD", "DEFEND"]:
 							if other.get("commander_id", vessel.id) == vessel.id:
 								other.dock = 0
@@ -1014,6 +1024,7 @@ func tick(days: int = 1, first_day_motion: Dictionary = {}) -> void:
 			var current_port: int = active().get("loc",0)
 			if current_port != 0:
 				market_updated.emit(current_port, -1, false)
+		CompanyWars.daily(self)
 		if day % 30 == 0:
 			Politics.advance(self)
 			Society.advance(self)
@@ -1078,6 +1089,7 @@ func load_state(data: Dictionary) -> bool:
 		if station.has("planet_index"):
 			PlanetPorts.configure_harvest(station,systems[station.system].planets[station.planet_index])
 	PlanetPorts.prepare_producers(self)
+	WarPeace.restore_legacy_territory(self)
 	refresh_all_tariffs()
 	init_core()
 	projectiles.clear()

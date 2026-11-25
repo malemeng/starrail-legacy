@@ -1470,19 +1470,19 @@ func _dispatch_inner(action: String, args: Dictionary) -> Dictionary:
 			var fid := integer(args, "firm_id", 0, 1, 999999)
 			var tflag := integer(args, "target_flag", -1, 0, 999)
 			var kind := str(args.get("kind", "tariff_dispute"))
-			var res: Dictionary = world.CompanyWars.start_pretext(world, fid, tflag, kind)
+			var res: Dictionary = world.CompanyWars.director_action(world,action,fid,tflag,kind)
 			game.refresh()
 			return success(res) if bool(res.get("ok", false)) else failure("pretext_failed", str(res.get("reason", "")))
 		"declare_company_war":
 			var fid := integer(args, "firm_id", 0, 1, 999999)
 			var tflag := integer(args, "target_flag", -1, 0, 999)
-			var res: Dictionary = world.CompanyWars.declare_war(world, fid, tflag)
+			var res: Dictionary = world.CompanyWars.director_action(world,action,fid,tflag)
 			game.refresh()
 			return success(res) if bool(res.get("ok", false)) else failure("company_war_failed", str(res.get("reason", "")))
 		"sign_company_peace":
 			var fid := integer(args, "firm_id", 0, 1, 999999)
 			var tflag := integer(args, "target_flag", -1, 0, 999)
-			var res: Dictionary = world.CompanyWars.sign_peace(world, fid, tflag, str(args.get("winner", "white")))
+			var res: Dictionary = world.CompanyWars.director_action(world,action,fid,tflag)
 			game.refresh()
 			return success(res) if bool(res.get("ok", false)) else failure("company_peace_failed", str(res.get("reason", "")))
 		"wait":

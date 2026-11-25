@@ -8,6 +8,8 @@
 
 ## Windows 启动
 
+要让游戏自带的 Agent 接管当前航程，完整解压 Windows 发行包，进入游戏后点顶栏「托管」，填入支持工具调用的模型服务地址、模型名及该服务需要的 API Key。单人托管和多 Agent 竞技场共用 `tools/agent-runtime` 内的 Python 和 smolagents，无需另装 Python。使用本地模型时，请先启动模型服务。
+
 ```powershell
 $session = Join-Path $env:TEMP ('starrail-agent-' + [Guid]::NewGuid().ToString('N'))
 .\agent_client.ps1 -Start -Session $session

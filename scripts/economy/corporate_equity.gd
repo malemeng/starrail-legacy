@@ -95,6 +95,9 @@ static func overview(world, firm_id: int) -> Dictionary:
 	var holdings := []
 	var sites := []
 	var reserved: int = world.EquityOrders.escrow_for(world,-firm_id)
+	var deal: Dictionary = world.campaign.get("diplomatic_deal",{})
+	if deal.get("client_firm",0) == firm_id:
+		reserved += int(world.DiplomaticTrade.amounts(deal.give,"cash").get(0,0))
 	var value: int = firm.get("treasury",0) + reserved + int(firm.get("deal_receivable",0))
 	var market_value: int = value
 	var fleet := []

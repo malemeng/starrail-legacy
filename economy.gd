@@ -183,7 +183,9 @@ static func crew(world, amount: int) -> int:
 static func market_open(world, visitor: Dictionary, station: Dictionary) -> bool:
 	if station.get("coalition_blockade",false) or station.get("landing_only",false):
 		return false
-	return visitor.flag < 0 or world.firms.get(station.firm, {}).get("embargo", -1) != visitor.flag
+	if visitor.flag < 0 or station.firm == 0:
+		return true
+	return world.firms.get(station.firm, {}).get("embargo", -1) != visitor.flag and not world.CompanyWars.at_war(world,station.firm,visitor.flag)
 
 static func allowed(world, vessel: Dictionary, station: Dictionary) -> bool:
 	return market_open(world,vessel,station) and world.can_dock(vessel,station)
@@ -1666,7 +1668,12 @@ static func has_supplies(vessel: Dictionary, needs: Dictionary) -> bool:
 	return false
 
 static func supply_rejoin(vessel: Dictionary, lead: Dictionary, days: float) -> bool:
-	return move_local(vessel,lead.pos,float(Industry.RULES.fleet_rendezvous.supply_units_per_day)*days)
+	var offset := Vector2(vessel.pos) - Vector2(lead.pos)
+	var transfer_range := float(Defenses.geometry(vessel.kind).module_radius) + float(Defenses.geometry(lead.kind).module_radius) + 4.0
+	if offset.length_squared() <= transfer_range*transfer_range:
+		return true
+	var alongside := Vector2(lead.pos) + offset.normalized()*transfer_range
+	return move_local(vessel,alongside,float(Industry.RULES.fleet_rendezvous.supply_units_per_day)*days)
 
 ## The nearby escort has already been steered tactically in the current physics frame.
 static func duty_leg(world, vessel: Dictionary, days: float, tactical: Dictionary = {}) -> void:
@@ -1675,8 +1682,10 @@ static func duty_leg(world, vessel: Dictionary, days: float, tactical: Dictionar
 	var queue: Array = vessel.get("order_queue",[])
 	if not queue.is_empty():
 		var order: Dictionary = queue.front()
-		var lead: Dictionary = world.ride()
-		if order.kind=="escort_to" and world.oversees(world.ship_principal(vessel)) and order.commander==lead.get("id",0) and lead.dock==0 and not lead.layer and lead.system==vessel.system and not tactical.has(vessel.id) and not vessel.battle.get("retired",false):
+		if order.kind != "escort_to":
+			return
+		var lead: Dictionary = world.ships.get(world.people.get(order.issuer,{}).get("ship",0),{})
+		if world.oversees(world.ship_principal(vessel),order.issuer) and order.commander==lead.get("id",0) and lead.dock==0 and not lead.layer and lead.system==vessel.system and not tactical.has(vessel.id) and not vessel.battle.get("retired",false):
 			var port: Dictionary = world.ports.get(order.port,{})
 			if not port.is_empty() and allowed(world,vessel,port) and not forbidden(vessel,port):
 				escort_rejoin(vessel,lead,days)
@@ -2098,7 +2107,7 @@ static func queue_order(world, ship_id: int, port_id: int, kind: String = "dock"
 	if vessel.is_empty() or port.is_empty() or not world.oversees(world.ship_principal(vessel)) or vessel.captain in [0,world.player] or forbidden(vessel,port) or not allowed(world,vessel,port):
 		return false
 	var orders: Array = vessel.get("order_queue",[])
-	var order := {"kind":kind,"port":port_id}
+	var order := {"kind":kind,"port":port_id,"issuer":world.player}
 	if FleetOrder.carries_goods(kind):
 		order.ware = ware
 		order.quantity = quantity
@@ -2118,7 +2127,7 @@ static func queue_order(world, ship_id: int, port_id: int, kind: String = "dock"
 static func order_access(world, order: Dictionary, port: Dictionary) -> bool:
 	if order.kind in ["buy","sell"]:
 		return port.build == 0 and order.ware != Industry.Ware.LUXURY
-	return order.kind not in ["load","unload"] or world.oversees(port.owner)
+	return order.kind not in ["load","unload"] or world.oversees(port.owner,order.issuer)
 
 static func cancel_order(world, ship_id: int, index: int) -> bool:
 	var ship: Dictionary = world.ships.get(ship_id,{})
@@ -2137,7 +2146,8 @@ static func order_trip(world, ship: Dictionary, port: Dictionary) -> String:
 	return "航线或燃料不足" if ship.travel.is_empty() else ""
 
 static func escort_order(world, ship: Dictionary, order: Dictionary, port: Dictionary, days: float = 6.0) -> String:
-	var commander: Dictionary = world.ride()
+	var issuer: Dictionary = world.people.get(order.issuer,{})
+	var commander: Dictionary = world.ships.get(issuer.get("ship",0),{})
 	if commander.get("id",0) != order.commander:
 		return "旗舰已更换"
 	if commander.dock == port.id:
@@ -2164,14 +2174,13 @@ static func escort_order(world, ship: Dictionary, order: Dictionary, port: Dicti
 	return ""
 
 static func step_order(world, ship: Dictionary, days: float = 6.0) -> void:
-	if not world.oversees(world.ship_principal(ship)):
-		clear_assignments(world,ship)
-		return
 	var order: Dictionary = ship.order_queue.front()
 	var port: Dictionary = world.ports.get(order.port,{})
 	var result := ""
 	var moved := 0
-	if port.is_empty() or forbidden(ship,port) or not allowed(world,ship,port) or not order_access(world,order,port):
+	if not world.people.get(order.issuer,{}).get("alive",false) or not world.oversees(world.ship_principal(ship),order.issuer):
+		result = "下令人已无权指挥本舰"
+	elif port.is_empty() or forbidden(ship,port) or not allowed(world,ship,port) or not order_access(world,order,port):
 		result = "目的港不可用"
 	elif order.kind == "escort_to":
 		result = escort_order(world,ship,order,port,days)

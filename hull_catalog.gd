@@ -127,6 +127,9 @@ static func hull_id(kind: int) -> String:
 static func operator_id(vessel: Dictionary) -> int:
 	return vessel.charter.operator if vessel.has("charter") and vessel.owner == 0 else vessel.owner
 
+static func combat_credit(vessel: Dictionary) -> int:
+	return vessel.captain if vessel.has("firm") else operator_id(vessel)
+
 static func kind_for_id(id: String) -> int:
 	return int(_kind_by_id.get(id, -1))
 
