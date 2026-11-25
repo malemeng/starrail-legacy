@@ -30,7 +30,7 @@ func attach_watch(layer: CanvasLayer) -> void:
 	step_progress.connect(watch_log.progress)
 
 func watch_station_ui(tab_name: String, dock_mode: String, note: String) -> void:
-	if DisplayServer.get_name() == "headless":
+	if bound_actor_id != 0 or DisplayServer.get_name() == "headless":
 		return
 	if not tab_name.is_empty():
 		game.tab = tab_name
@@ -189,9 +189,10 @@ func _observe_inner() -> Dictionary:
 		return {"screen":"succession","day":world.day,"candidates":heirs.slice(0,40)}
 	var actor: Dictionary = world.active()
 	var vessel: Dictionary = world.ride()
-	var system_index: int = game.current_system()
+	var system_index: int = int(vessel.get("system",world.ports.get(actor.loc,{}).get("system",0))) if bound_actor_id > 0 else game.current_system()
+	var in_hyperspace: bool = vessel.get("layer",false) if bound_actor_id > 0 else game.galaxy
 	var region: Dictionary = world.systems[system_index]
-	var state := {"screen":"port" if actor.loc != 0 else ("hyperspace" if game.galaxy else "flight"),
+	var state := {"screen":"port" if actor.loc != 0 else ("hyperspace" if in_hyperspace else "flight"),
 		"day":world.day,"seed":world.settings.seed,"actor":{"id":actor.id,"name":actor.name,"credits":actor.wallet,"faction":world.flag_name(actor.flag)},
 		"system":{"id":system_index,"name":region.name},"notice":game.notice_text,"contract":world.contracts.get(world.player,{}).duplicate(),
 		"objective":Story.objective(world),"speed":game.speed,"attention":world.attention,"ship":{},"ports":[],"contacts":[],"targets":[]}
@@ -253,7 +254,7 @@ func _observe_inner() -> Dictionary:
 	state.fleet = fleets
 	if not vessel.is_empty():
 		var battle: Dictionary = vessel.battle
-		state.ship = {"hull_id":vessel.hull_id,"fit":vessel.fit.as_dictionary(),"shield_type":Hulls.MODELS[vessel.kind].get("shield_type","NONE"),"armor_grid":Array(battle.get("armor_grid",[])), "shield_arc":battle.get("shield_arc_live",0.0), "cr":battle.get("cr",1.0),"silent_running":battle.get("silent_running",false),"presets":Hulls.presets(vessel.kind).map(func(p): return p.id), "id":vessel.id,"model":world.HULLS[vessel.kind],"pos":coords(vessel.galpos if game.galaxy else vessel.pos),
+		state.ship = {"hull_id":vessel.hull_id,"fit":vessel.fit.as_dictionary(),"shield_type":Hulls.MODELS[vessel.kind].get("shield_type","NONE"),"armor_grid":Array(battle.get("armor_grid",[])), "shield_arc":battle.get("shield_arc_live",0.0), "cr":battle.get("cr",1.0),"silent_running":battle.get("silent_running",false),"presets":Hulls.presets(vessel.kind).map(func(p): return p.id), "id":vessel.id,"model":world.HULLS[vessel.kind],"pos":coords(vessel.galpos if in_hyperspace else vessel.pos),
 			"velocity":coords(battle.motion),"heading":snappedf(float(vessel.heading),0.001),"dock":vessel.dock,"hp":vessel.hp,"armor":battle.armor,
 			"crew":vessel.crew,"fuel":vessel.fuel,"free_cargo":world.cargo_free(vessel),"locked":vessel.locked,"cargo":vessel.cargo.duplicate(),
 			"soft_flux":battle.soft_flux,"hard_flux":battle.hard_flux,"capacity":Hulls.capacity(vessel),"shield":battle.shield,
@@ -269,10 +270,10 @@ func _observe_inner() -> Dictionary:
 			"max_charges":system.get("charges",null), "toggle":system.get("toggle",false)}
 		state.ship.fighter_wings = battle.get("fighter_wings",[]).map(func(wing):
 			return {"id":wing.id,"sortie":wing.sortie,"returning":wing.returning,"hp":wing.hp,"pos":coords(wing.pos),"aircraft":wing.get("count_live",wing.count)})
-		state.waypoint = coords(game.waypoint) if game.waypoint_live else null
+		state.waypoint = vessel.get("arena_dest",{}).get("port_id") if bound_actor_id > 0 else (coords(game.waypoint) if game.waypoint_live else null)
 	state.wares = world.WARES
 	state.ship_catalog = Hulls.MODELS.map(func(model): return {"name":model.name,"hull_id":model.id,"class":model.size,"market":model.market,"price":model.price,"price_basis":"reference","cargo":model.cargo}) if state.screen == "port" else []
-	if game.galaxy and not vessel.is_empty():
+	if in_hyperspace and not vessel.is_empty():
 		var point: Vector2 = vessel.galpos
 		var ordered: Array = world.nearby_beacons(point)
 		state.beacons = []
@@ -528,12 +529,19 @@ func dispatch(action: String, args: Dictionary) -> Dictionary:
 		var world = game.world
 		var prev_player := int(world.player)
 		var prev_last := int(world.last_player)
+		var prior_notice: String = game.notice_text
 		if bound_actor_id != prev_player:
 			world.player = bound_actor_id
+			game.arena_display_suspended = true
 		var res := _dispatch_inner(action, args)
 		if bound_actor_id != prev_player:
 			world.player = prev_player
 			world.last_player = prev_last
+			game.arena_display_suspended = false
+			game.notice_text = prior_notice
+			if game.arena_refresh_requested:
+				game.arena_refresh_requested = false
+				game.refresh()
 		return res
 	return _dispatch_inner(action, args)
 
@@ -1528,7 +1536,8 @@ func _dispatch_inner(action: String, args: Dictionary) -> Dictionary:
 				return failure("invalid_trade")
 			var moved := Economy.trade(world,vessel.dock,ware,quantity,black)
 			if moved != 0:
-				game.hud.black_market = black
+				if bound_actor_id == 0:
+					game.hud.black_market = black
 				watch_station_ui("港口", "market", "代理操作：%s %d 单位 %s" % ["买入" if moved > 0 else "卖出", absi(moved), world.WARES[ware]])
 				game.refresh()
 			return success({"moved":moved}) if moved != 0 else failure("trade_rejected")
@@ -1569,9 +1578,10 @@ func _dispatch_inner(action: String, args: Dictionary) -> Dictionary:
 			var ship_id := Economy.buy_ship(world,world.active().loc,model,expected)
 			if ship_id == 0:
 				return failure("purchase_rejected")
-			game.dock_view.model_id = model
-			game.dock_view.last_bought_ship_id = ship_id
-			game.dock_view.refit_ship_id = ship_id
+			if bound_actor_id == 0:
+				game.dock_view.model_id = model
+				game.dock_view.last_bought_ship_id = ship_id
+				game.dock_view.refit_ship_id = ship_id
 			watch_station_ui("港口", "yard", "代理操作：购入 #%d %s" % [ship_id, world.HULLS[model]])
 			game.refresh()
 			return success({"ship":ship_id})

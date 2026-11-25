@@ -581,6 +581,9 @@ func market(body: Node, station: Dictionary) -> void:
 		game.button(body, "取消当前委托", func(): world.contracts.erase(world.player); game.refresh())
 
 func market_updated(port_id: int, ware: int, black: bool) -> void:
+	if game.arena_display_suspended:
+		game.arena_refresh_requested = true
+		return
 	if game.tab == "港口" and game.dock_view.mode == "yard" and game.dock_view.station_id == port_id and not black:
 		game.refresh()
 		return

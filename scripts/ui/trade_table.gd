@@ -117,7 +117,7 @@ func paint() -> void:
 	heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	game.button(top,"商品与协商",func(): stock_page = false; paint(),stock_page and deal_id == 0)
 	game.button(top,"股票市场",func(): stock_page = true; paint(),not stock_page and deal_id == 0)
-	game.button(top,"关闭　Esc",close)
+	game.button(top,"关闭" if game.mobile_play else "关闭　Esc",close)
 	if stock_page:
 		stocks.paint(layout)
 		return

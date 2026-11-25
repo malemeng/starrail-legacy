@@ -6,6 +6,8 @@
 
 [下载 Windows 64 位试玩版（ZIP）](https://github.com/malemeng/starrail-legacy/releases/latest/download/StarrailLegacy-Windows-x64.zip) · 完整解压，保留同目录的 `fleet_collision.dll`，双击 `StarrailLegacy.exe` 即可离线游玩。
 
+[下载安卓横屏试玩版 0.1.0（APK）](https://github.com/malemeng/starrail-legacy/releases/download/android-0.1.0/StarrailLegacy-Android.apk) · 适用于 Android 7.0 及以上的 ARM64 手机，支持触屏驾驶、外部模型托管和多 Agent 竞技场。
+
 ## 实机演示
 
 ![首航实录：在晨曦自由港接单，驾驶轻艇跃迁到第 02 号星系采矿，再到炉心转运站交货](docs/gameplay/first-voyage.gif)
@@ -28,6 +30,10 @@
 - **把驾驶交给 AI。** 在附带内置运行环境的试玩包中，点顶栏「托管」并配置自己的模型服务，就能旁观 AI 接手当前航程。「竞技场」还能让多个 AI 对战。[托管与竞技场说明](AGENT_PLAY.md)
 
 ## 常用操作
+
+安卓试玩版以横屏运行，适用于 Android 7.0 及以上的 ARM64 设备，也支持 x86_64 模拟器。安装 `StarrailLegacy-Android.apk` 后，从「新航程」开始。在港口用触屏交易和整备，离港后点「1×」让时间流动，用左侧摇杆驾驶。选「航点」后点目的地，或选「开火」并按住战场瞄准射击。右手可同时按住护盾或助推。顶栏提供保存和读档。
+
+安卓也支持单人模型托管和多 Agent 竞技场。选「托管」填写自己的模型服务即可启用，常规游戏可离线游玩。[安卓托管设置](AGENT_PLAY.md#安卓模型托管)
 
 | 想做什么 | 操作 |
 | --- | --- |

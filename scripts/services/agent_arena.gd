@@ -14,6 +14,10 @@ func start_arena(p_game, slot_configs: Array, runner_script: String) -> bool:
 	game = p_game
 	if game == null or not game.playing or slot_configs.is_empty():
 		return false
+	if game.mobile_play:
+		for cfg in slot_configs:
+			if cfg.get("auto_launch",true) and not game.MobileModelAgent.config_issue(cfg).is_empty():
+				return false
 	var world = game.world
 	var base_dir := ProjectSettings.globalize_path(ARENA_DIR)
 	DirAccess.make_dir_recursive_absolute(base_dir)
@@ -53,7 +57,8 @@ func start_arena(p_game, slot_configs: Array, runner_script: String) -> bool:
 		if not bridge.start(sdir, false):
 			continue
 		var py_pid := -1
-		if bool(cfg.get("auto_launch", true)) and not runner_script.is_empty():
+		var native_runner: Node
+		if bool(cfg.get("auto_launch", true)) and (game.mobile_play or not runner_script.is_empty()):
 			var others: Array[String] = []
 			for j in range(slot_configs.size()):
 				if j == i:
@@ -72,7 +77,10 @@ func start_arena(p_game, slot_configs: Array, runner_script: String) -> bool:
 				"--goal", str(cfg.get("goal", "")),
 				"--rivals", "你是「%s」；同宇宙对手：%s" % [cname, "、".join(others)] if not others.is_empty() else "",
 			])
-			py_pid = game.launch_agent_runner(py_args)
+			if game.mobile_play:
+				native_runner = game.start_mobile_runner(bridge,cfg,py_args[-1])
+			else:
+				py_pid = game.launch_agent_runner(py_args)
 		slots.append({
 			"slot": i + 1,
 			"name": cname,
@@ -84,14 +92,24 @@ func start_arena(p_game, slot_configs: Array, runner_script: String) -> bool:
 			"dir": sdir,
 			"bridge": bridge,
 			"pid": py_pid,
+			"native_runner":native_runner,
 			"thought": "等待首轮思考...",
 			"last_action": "",
 		})
+		bind_mobile_status(slots.back())
 	active = not slots.is_empty()
 	_sync_campaign_slots()
 	if active and game.speed == 0:
 		game.set_speed(2)
 	return active
+
+func bind_mobile_status(slot: Dictionary) -> void:
+	var runner = slot.get("native_runner")
+	if is_instance_valid(runner):
+		runner.finished.connect(func(note: String):
+			slot.finished_note = note
+			slot.thought = note
+			_sync_campaign_slots())
 
 func _sync_campaign_slots() -> void:
 	if game == null or game.world == null:
@@ -107,6 +125,10 @@ func _sync_campaign_slots() -> void:
 			"ship_id": int(s.get("ship_id", 0)),
 			"max_steps": int(s.get("max_steps", 0)),
 		})
+		if game.mobile_play:
+			saved.back().finished_note = str(s.get("finished_note",""))
+			var runner = s.get("native_runner")
+			saved.back().rounds_used = runner.rounds if is_instance_valid(runner) else int(s.get("rounds_used",0))
 	if saved.is_empty():
 		game.world.campaign.erase("arena_slots")
 	else:
@@ -154,7 +176,9 @@ func resume_arena(p_game, runner_script: String, resolve_creds: Callable, auto_l
 		if not bridge.start(sdir, false):
 			continue
 		var py_pid := -1
-		if auto_launch and not runner_script.is_empty():
+		var native_runner: Node
+		var finished_note := str(item.get("finished_note",""))
+		if auto_launch and finished_note.is_empty() and (game.mobile_play or not runner_script.is_empty()):
 			var creds: Dictionary = resolve_creds.call(mname) if resolve_creds.is_valid() else {}
 			var others: Array[String] = []
 			for j in range(valid_entries.size()):
@@ -171,7 +195,16 @@ func resume_arena(p_game, runner_script: String, resolve_creds: Callable, auto_l
 				"--goal", gtext,
 				"--rivals", "你是「%s」；同宇宙对手：%s" % [cname, "、".join(others)] if not others.is_empty() else "",
 			])
-			py_pid = game.launch_agent_runner(py_args)
+			if game.mobile_play:
+				creds = creds.duplicate()
+				creds.merge({"model":mname,"goal":gtext,"max_steps":item.get("max_steps",0),"rounds_used":item.get("rounds_used",0)},true)
+				var issue: String = game.MobileModelAgent.config_issue(creds)
+				if issue.is_empty():
+					native_runner = game.start_mobile_runner(bridge,creds,py_args[-1])
+				else:
+					bridge.publish("thought.json",{"thought":issue})
+			else:
+				py_pid = game.launch_agent_runner(py_args)
 		slots.append({
 			"slot": i + 1,
 			"name": cname,
@@ -183,15 +216,23 @@ func resume_arena(p_game, runner_script: String, resolve_creds: Callable, auto_l
 			"dir": sdir,
 			"bridge": bridge,
 			"pid": py_pid,
-			"thought": "已从存档恢复，等待续跑思考...",
+			"native_runner":native_runner,
+			"thought": "已从存档恢复，等待续跑思考..." if finished_note.is_empty() else finished_note,
+			"finished_note":finished_note,
+			"rounds_used":item.get("rounds_used",0),
 			"last_action": "",
 		})
+		bind_mobile_status(slots.back())
 	active = not slots.is_empty()
 	_sync_campaign_slots()
 	return active
 
 func stop_arena(clear_saved: bool = true) -> void:
 	for s in slots:
+		var runner = s.get("native_runner")
+		if is_instance_valid(runner):
+			runner.stop()
+			runner.queue_free()
 		var py_pid := int(s.get("pid", -1))
 		if py_pid > 0 and OS.is_process_running(py_pid):
 			OS.kill(py_pid)

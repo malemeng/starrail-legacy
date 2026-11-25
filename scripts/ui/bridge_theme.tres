@@ -1,7 +1,7 @@
 [gd_resource type="Theme" format=3]
 
 [sub_resource type="SystemFont" id="BridgeFont"]
-font_names = PackedStringArray("Microsoft YaHei UI", "Microsoft YaHei", "DengXian", "SimHei")
+font_names = PackedStringArray("Microsoft YaHei UI", "Microsoft YaHei", "DengXian", "SimHei", "Noto Sans CJK SC", "Droid Sans Fallback")
 
 [sub_resource type="StyleBoxFlat" id="normal"]
 bg_color = Color(0.0706, 0.1333, 0.2078, 0.94)

@@ -122,8 +122,8 @@ static func handle(game, event: InputEvent) -> void:
 		return
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
 		var vessel: Dictionary = world.ride()
-		if game.canvas.visible and game.canvas.get_global_rect().has_point(game.get_global_mouse_position()):
-			var cursor: Vector2 = game.canvas.get_local_mouse_position()
+		if game.canvas.visible and game.canvas.get_global_rect().has_point(event.position):
+			var cursor: Vector2 = game.canvas.get_global_transform_with_canvas().affine_inverse()*event.position
 			var world_pos: Vector2 = game.canvas.location(cursor)
 			var zoom_val: float = maxf(0.15, float(game.canvas.zoom))
 			if game.galaxy:

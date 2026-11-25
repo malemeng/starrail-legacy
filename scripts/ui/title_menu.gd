@@ -116,7 +116,7 @@ func menu_button(parent: VBoxContainer, caption: String, action: Callable, prima
 		button.add_theme_stylebox_override(state,style)
 	for state in ["font_color","font_hover_color","font_pressed_color","font_focus_color","font_hover_pressed_color"]:
 		button.add_theme_color_override(state,Color("16222e") if primary else PAPER)
-	button.pressed.connect(action)
+	button.pressed.connect(action, CONNECT_DEFERRED if game.mobile_play else 0)
 	parent.add_child(button)
 
 func arrange() -> void:

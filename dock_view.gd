@@ -101,7 +101,7 @@ func paint(station: Dictionary) -> void:
 	game.clear(flow)
 	var air := Control.new()
 	air.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	air.custom_minimum_size.y = 20 if mode in ["yard", "refit"] else 242
+	air.custom_minimum_size.y = 20 if mode in ["yard", "refit"] else (90 if game.mobile_play else 242)
 	flow.add_child(air)
 	var plaque: HBoxContainer = game.hbox(flow)
 	var accent := ColorRect.new()
@@ -399,7 +399,7 @@ func sidebar(body: Node, station: Dictionary) -> void:
 		UIKit.action_button(nav_row, "货栈", func(): mode = "market"; game.refresh(), "ghost", true, "", true)
 		UIKit.action_button(nav_row, "船坞", func(): mode = "yard"; game.refresh(), "ghost", true, "", true)
 		UIKit.action_button(nav_row, "改装", func(): mode = "refit"; game.refresh(), "ghost", true, "", true)
-		UIKit.action_button(nav_row, "离港 E", game.flight.dock, "default", not vessel.is_empty(), "未登舰", true)
+		UIKit.action_button(nav_row, game.key_caption("离港","E"), game.flight.dock, "default", not vessel.is_empty(), "未登舰", true)
 	match mode:
 		"market":
 			game.hud.market(body, station)

@@ -109,8 +109,19 @@ var alerts_button: Button
 var smolagents_pid := -1
 var arena: Node
 var arena_button: Button
+var mobile_play := OS.has_feature("android")
+var touch_deck: Control
+var mobile_was_docked := false
+const MobileModelAgent = preload("res://scripts/services/mobile_model_agent.gd")
+var mobile_runner: MobileModelAgent
+var mobile_background := false
+var arena_display_suspended := false
+var arena_refresh_requested := false
 
 func _ready() -> void:
+	if mobile_play:
+		get_window().content_scale_size = Vector2i(1280,800)
+		get_tree().quit_on_go_back = false
 	for binding in [[&"left", KEY_A], [&"right", KEY_D], [&"up", KEY_W], [&"down", KEY_S]]:
 		if not InputMap.has_action(binding[0]):
 			InputMap.add_action(binding[0])
@@ -180,6 +191,9 @@ func title(parent: Node, caption: String, point: int = 15, tone: Color = INK, wr
 	parent.add_child(result)
 	return result
 
+func key_caption(label: String, key: String) -> String:
+	return label if mobile_play else label + "  " + key
+
 func button(parent: Node, caption: String, action: Callable, enabled: bool = true, expanded: bool = false) -> Button:
 	var result := Button.new()
 	result.text = caption
@@ -191,7 +205,7 @@ func button(parent: Node, caption: String, action: Callable, enabled: bool = tru
 	result.pressed.connect(func():
 		if audio != null:
 			audio.play("click")
-		action.call())
+		action.call(), CONNECT_DEFERRED if mobile_play else 0)
 	parent.add_child(result)
 	return result
 
@@ -258,11 +272,19 @@ func show_creator() -> void:
 	title(layout, "星 轨 遗 产", 52)
 	title(layout, "断航两百年后，没有人等你拯救银河。晨曦自由港只问：你的名字，以及你的泊位账单。", 17, DIM)
 	var columns := preload("res://scripts/ui/creator_screen.tscn").instantiate()
-	layout.add_child(columns)
+	if mobile_play:
+		var scroll := ScrollContainer.new()
+		scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		layout.add_child(scroll)
+		columns.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		scroll.add_child(columns)
+	else:
+		layout.add_child(columns)
 	var draft: VBoxContainer = columns.get_node("Dossier/Fields")
 	title(draft, "01   海 关 登 记", 19, GOLD)
 	portrait = Portrait.new()
-	portrait.custom_minimum_size = Vector2(240, 270)
+	portrait.custom_minimum_size = Vector2(175,140) if mobile_play else Vector2(240,270)
 	portrait.look = creator.look.duplicate()
 	draft.add_child(portrait)
 	creator.name = field(draft, "林遥", 16)
@@ -348,6 +370,8 @@ func show_title() -> void:
 	if cli_agent_mode:
 		show_creator()
 		return
+	if is_instance_valid(mobile_runner):
+		_stop_takeover()
 	if arena != null and arena.active: arena.stop_arena(false)
 	playing = false
 	reset_layout()
@@ -528,7 +552,7 @@ func open_arena_dialog() -> void:
 			say("已投放 %d 个 Agent 进入同宇宙竞技！可在顶栏「竞技场: 开」查看净资产榜与实时思考。" % chosen.size())
 			refresh()
 		else:
-			say("启动多 Agent 竞技失败，请检查模型配置或 Python 环境。"))
+			say("启动竞技场失败，请先在「托管」保存模型地址和名称，再为每个槽位选择预设。" if mobile_play else "启动多 Agent 竞技失败，请检查模型配置或 Python 环境。"))
 	cfg_dlg.canceled.connect(cfg_dlg.queue_free)
 	cfg_dlg.close_requested.connect(cfg_dlg.queue_free)
 	add_child(cfg_dlg)
@@ -636,6 +660,8 @@ func show_licenses() -> void:
 	var credits := RichTextLabel.new()
 	credits.custom_minimum_size = Vector2(650, 380)
 	credits.text = "Godot Engine\nhttps://godotengine.org/license/\n\n" + Engine.get_license_text()
+	if FileAccess.file_exists("res://LICENSE"):
+		credits.text += "\n\n星轨遗产 · 原创源代码授权\n" + FileAccess.get_file_as_string("res://LICENSE")
 	for license_name in Engine.get_license_info():
 		credits.text += "\n\n" + license_name + "\n" + Engine.get_license_info()[license_name]
 	dialog.add_child(credits)
@@ -678,6 +704,9 @@ func run_bridge() -> void:
 	if not world.watched_activity.is_connected(say):
 		world.watched_activity.connect(say)
 	speed = 0
+	if mobile_play:
+		mobile_was_docked = world.active().get("loc",0) != 0
+		side_collapsed = not mobile_was_docked
 	galaxy = world.ride().get("layer", false)
 	notice_text = ""
 	flight.reset(true)
@@ -716,7 +745,7 @@ func run_bridge() -> void:
 	button(top, "标题", confirm_title)
 	alerts_button = UIKit.action_button(top, "✓ 正常", open_alerts_popup, "ghost")
 	alerts_button.tooltip_text = "查看舰船低血量/低燃料、空间站缺粮/封锁、就绪战争借口与待决事务。"
-	side_toggle = button(top, "收起面板", toggle_side_panel)
+	side_toggle = button(top, "展开面板" if side_collapsed else "收起面板", toggle_side_panel)
 	var interior := hbox(layout)
 	interior.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	interior.add_theme_constant_override("separation", 10)
@@ -749,7 +778,7 @@ func run_bridge() -> void:
 	var stage_wrap := Control.new()
 	stage_wrap.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	stage_wrap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	stage_wrap.custom_minimum_size = Vector2(610, 420)
+	stage_wrap.custom_minimum_size = Vector2(560,235) if mobile_play else Vector2(610,420)
 	flight_panel.add_child(stage_wrap)
 	canvas = Sector.new()
 	canvas.game = self
@@ -760,6 +789,8 @@ func run_bridge() -> void:
 		canvas.set_process(false)
 		canvas.visible = false
 	dock_view.stage = preload("res://scripts/ui/dock_overlay.tscn").instantiate()
+	if mobile_play:
+		dock_view.stage.custom_minimum_size = Vector2(550,400)
 	dock_view.stage.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	stage_wrap.add_child(dock_view.stage)
 	toast_panel = PanelContainer.new()
@@ -774,6 +805,10 @@ func run_bridge() -> void:
 	stage_wrap.add_child(toast_panel)
 	toast_label = title(toast_panel, "", 13, GOLD, true)
 	toast_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if mobile_play:
+		touch_deck = preload("res://scripts/ui/touch_flight.gd").new()
+		touch_deck.game = self
+		flight_panel.add_child(touch_deck)
 	var dock_card := PanelContainer.new()
 	dock_card.add_theme_stylebox_override("panel", UIKit._card_style(Color.TRANSPARENT, UIKit.SUBCARD_BG))
 	flight_panel.add_child(dock_card)
@@ -781,18 +816,18 @@ func run_bridge() -> void:
 	quick_actions.add_theme_constant_override("h_separation", 6)
 	dock_card.add_child(quick_actions)
 	dock_action_btn = button(quick_actions, "停靠 / 离港  E", flight.dock)
-	nav_button = button(quick_actions, "直达导航  N", open_station_navigator)
+	nav_button = button(quick_actions, key_caption("直达导航","N"), open_station_navigator)
 	nav_button.tooltip_text = "选择星区中任意已知空间站，自动规划本星系或跨星系超空间直达航线。"
-	button(quick_actions, "采矿 / 打捞  G", flight.salvage)
+	button(quick_actions, key_caption("采矿 / 打捞","G"), flight.salvage)
 	var field_fix := button(quick_actions, "应急抢修", flight.field_repair)
 	field_fix.tooltip_text = "非交火状态下在太空抢修旗舰与护航舰：消耗船体部件/合金/废料，或无料应急恢复至 45% 船体。"
-	autopilot_button = button(quick_actions, "战斗托管: 关  U", toggle_autopilot)
+	autopilot_button = button(quick_actions, key_caption("战斗托管: 关","U"), toggle_autopilot)
 	autopilot_button.toggle_mode = true
 	autopilot_button.tooltip_text = "开启后由 AI 接管旗舰的实时战斗走位、护盾、技能与开火（按 U 或移动键随时切换）。"
 	tactic_button = button(quick_actions, "托管战术: %s" % COMBAT_TACTICS[combat_tactic], cycle_combat_tactic)
 	tactic_button.tooltip_text = "切换旗舰战斗托管战术：激进突击 / 稳健接战 / 游击拉扯 / 护盾抗线 / 避战撤离。"
 	button(quick_actions, "求援拖航", flight.tow)
-	tactics_button = button(quick_actions, "战术  Tab", toggle_tactics)
+	tactics_button = button(quick_actions, key_caption("战术","Tab"), toggle_tactics)
 	tactics = hbox(flight_panel)
 	button(tactics,"旗舰自动攻击",func():
 		say("旗舰已接令攻击 #%d。" % selected_target if flight.attack_target(selected_target) else "先右键选择本地可见舰船。"))
@@ -800,13 +835,17 @@ func run_bridge() -> void:
 		button(tactics, Battle.ORDERS[index], func():
 			var sent := flight.issue(index, selected_target)
 			say("已指挥 %s 艘僚舰：%s" % [sent, Battle.ORDERS[index]] if sent > 0 else "没有可接令僚舰，或尚未选定有效目标。"), true, true)
-	button(tactics, "返回舰桥  Esc", func(): set_tactics(false))
+	button(tactics, key_caption("返回舰桥","Esc"), func(): set_tactics(false))
 	tactics.hide()
 	var keys_row := hbox(flight_panel)
 	var keys_hint := title(flight_panel, "WASD 驾驶 · 左键开火 · Q 全武器齐射 · 1–3/Shift 编组自动 · 滚轮缩放 · Ctrl 助推 · Shift 护盾/相位 · V 排散 · F 系统 · N 直达导航 · Tab 战术 · R 脉冲 · U 战斗托管", 12, DIM, true)
 	keys_hint.hide()
+	if mobile_play:
+		keys_hint.text = "左侧摇杆驾驶。选「航点」后点目的地，选「开火」后按住目标瞄准射击。护盾和助推可与摇杆同时按住。「查看」打开目标菜单。"
 	var keys_btn: Button = button(keys_row, "? 键位", func():
 		keys_hint.visible = not keys_hint.visible)
+	if mobile_play:
+		keys_btn.text = "触屏操作"
 	keys_btn.toggle_mode = true
 	location_banner = title(keys_row, "", 13, GOLD, true)
 	location_banner.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -859,6 +898,8 @@ func confirm_title() -> void:
 
 func say(message: String) -> void:
 	notice_text = message
+	if arena_display_suspended:
+		return
 	if is_instance_valid(footer):
 		footer.text = message
 	if is_instance_valid(toast_panel) and is_instance_valid(toast_label) and not message.is_empty():
@@ -889,7 +930,7 @@ func takeover_dir() -> String:
 func set_autopilot(enabled: bool, quiet: bool = false) -> void:
 	autopilot = enabled
 	if is_instance_valid(autopilot_button):
-		autopilot_button.text = "战斗托管: 开  U" if autopilot else "战斗托管: 关  U"
+		autopilot_button.text = key_caption("战斗托管: 开" if autopilot else "战斗托管: 关","U")
 		autopilot_button.button_pressed = autopilot
 	if not quiet:
 		say("已开启旗舰战斗托管（AI 接管走位、护盾、技能与开火，按 U 或移动键可随时接管）。" if autopilot else "已关闭旗舰战斗托管。")
@@ -908,6 +949,8 @@ func cycle_combat_tactic() -> void:
 	set_combat_tactic((combat_tactic + 1) % COMBAT_TACTICS.size())
 
 func _exit_tree() -> void:
+	if is_instance_valid(mobile_runner):
+		mobile_runner.stop()
 	if arena != null:
 		arena.stop_arena(false)
 	if smolagents_pid > 0 and OS.is_process_running(smolagents_pid):
@@ -917,6 +960,8 @@ func _exit_tree() -> void:
 		agent_bridge.publish("shutdown.json", {"ok": true, "reason": "game_exited"})
 
 func _smolagents_script() -> String:
+	if mobile_play:
+		return ""
 	var path := OS.get_executable_path().get_base_dir().path_join("tools/smolagents_runner.py")
 	if OS.has_feature("editor"):
 		path = ProjectSettings.globalize_path("res://tools/smolagents_runner.py")
@@ -931,11 +976,23 @@ func launch_agent_runner(args: PackedStringArray) -> int:
 		interpreter = "python"
 	return OS.create_process(interpreter, PackedStringArray(["-B", "-X", "utf8"]) + args, false)
 
+func start_mobile_runner(bridge, cfg: Dictionary, rivals: String = "") -> MobileModelAgent:
+	var runner := MobileModelAgent.new()
+	arena.add_child(runner)
+	runner.suspended = mobile_background
+	runner.start(bridge,cfg,rivals)
+	return runner
+
+func _mobile_takeover_finished(note: String, runner: MobileModelAgent) -> void:
+	if runner == mobile_runner:
+		_stop_takeover()
+		say(note)
+
 func _load_smolagents_cfg() -> Dictionary:
 	var def := {
-		"api_base": "http://localhost:11434/v1",
-		"model": "qwen2.5:7b",
-		"api_key": "ollama",
+		"api_base": "" if mobile_play else "http://localhost:11434/v1",
+		"model": "" if mobile_play else "qwen2.5:7b",
+		"api_key": "" if mobile_play else "ollama",
 		"goal": "通过高利润跑商、买船建队、建站与创办企业最大化净资产",
 		"max_steps": 0,
 		"auto_launch": true,
@@ -1045,6 +1102,11 @@ func toggle_agent_takeover() -> void:
 		_stop_takeover()
 
 func _start_takeover(cfg: Dictionary) -> void:
+	if mobile_play:
+		var issue := MobileModelAgent.config_issue(cfg)
+		if not issue.is_empty():
+			say(issue)
+			return
 	var dir := takeover_dir()
 	DirAccess.make_dir_recursive_absolute(dir)
 	for fname in DirAccess.get_files_at(dir):
@@ -1065,7 +1127,12 @@ func _start_takeover(cfg: Dictionary) -> void:
 	if is_instance_valid(takeover_button):
 		takeover_button.text = "托管: 开"
 		takeover_button.button_pressed = true
-	if bool(cfg.get("auto_launch", true)):
+	if mobile_play:
+		mobile_runner = start_mobile_runner(bridge,cfg)
+		mobile_runner.finished.connect(_mobile_takeover_finished.bind(mobile_runner), CONNECT_DEFERRED)
+		say("正在连接 "+str(cfg.model)+"，再点「托管: 开」可收回控制。")
+		refresh()
+	elif bool(cfg.get("auto_launch", true)):
 		var script := _smolagents_script()
 		if script.is_empty():
 			say("已开启托管会话（未找到 tools/smolagents_runner.py，可手动连接：" + dir + "）")
@@ -1087,6 +1154,10 @@ func _start_takeover(cfg: Dictionary) -> void:
 		say("已开启外部 Agent 桥接目录：" + dir)
 
 func _stop_takeover() -> void:
+	if is_instance_valid(mobile_runner):
+		mobile_runner.stop()
+		mobile_runner.queue_free()
+		mobile_runner = null
 	if smolagents_pid > 0 and OS.is_process_running(smolagents_pid):
 		OS.kill(smolagents_pid)
 	smolagents_pid = -1
@@ -1107,13 +1178,13 @@ func _stop_takeover() -> void:
 	if is_instance_valid(takeover_button):
 		takeover_button.text = "托管: 关"
 		takeover_button.button_pressed = false
-	say("已停止 smolagents 托管，恢复手动操作。")
+	say("已停止模型托管，恢复手动操作。")
 	refresh()
 
 func _open_smolagents_dialog() -> void:
 	var cfg := _load_smolagents_cfg()
 	var dialog := AcceptDialog.new()
-	dialog.title = "smolagents 全流程托管配置"
+	dialog.title = "模型托管配置" if mobile_play else "smolagents 全流程托管配置"
 	dialog.ok_button_text = "取消"
 	var box := VBoxContainer.new()
 	box.custom_minimum_size = Vector2(560, 340)
@@ -1122,13 +1193,19 @@ func _open_smolagents_dialog() -> void:
 	var ep_row := hbox(box)
 	title(ep_row, "API 地址", 14, DIM).custom_minimum_size.x = 88
 	var ep_in := field(ep_row, str(cfg.api_base), 160)
+	if mobile_play:
+		ep_in.placeholder_text = "模型服务地址，含 /v1"
 	var mod_row := hbox(box)
 	title(mod_row, "模型名称", 14, DIM).custom_minimum_size.x = 88
 	var mod_in := field(mod_row, str(cfg.model), 80)
+	if mobile_play:
+		mod_in.placeholder_text = "填写服务商提供的模型 ID"
 	var key_row := hbox(box)
 	title(key_row, "API Key", 14, DIM).custom_minimum_size.x = 88
 	var key_in := field(key_row, str(cfg.api_key), 160)
 	key_in.secret = true
+	if mobile_play:
+		key_in.placeholder_text = "按服务要求填写"
 	var goal_row := hbox(box)
 	title(goal_row, "经营目标", 14, DIM).custom_minimum_size.x = 88
 	var goal_in := field(goal_row, str(cfg.goal), 240)
@@ -1144,7 +1221,9 @@ func _open_smolagents_dialog() -> void:
 	auto_cb.text = "自动拉起游戏内 smolagents"
 	auto_cb.button_pressed = bool(cfg.auto_launch)
 	opt_row.add_child(auto_cb)
-	title(box, "点击启动后将在后台自动运行 HuggingFace smolagents 并接管操作，无需切换窗口；再次点击顶栏「托管: 开」即可随时收回控制权。", 12, DIM, true)
+	auto_cb.visible = not mobile_play
+	var instructions := "填写兼容 Chat Completions、支持工具调用的模型服务。局域网电脑模型请填电脑 IP（含 /v1）。启动后会向该服务发送游戏状态；点「托管: 开」即可停止。" if mobile_play else "点击启动后将在后台自动运行 HuggingFace smolagents 并接管操作，无需切换窗口；再次点击顶栏「托管: 开」即可随时收回控制权。"
+	title(box,instructions,12,DIM,true)
 	var profiles := _load_model_profiles()
 	if not profiles.is_empty():
 		var prof_row := hbox(box)
@@ -1180,6 +1259,15 @@ func _open_smolagents_dialog() -> void:
 			"max_steps": int(step_in.value),
 			"auto_launch": auto_cb.button_pressed,
 		}
+		if mobile_play:
+			var issue := MobileModelAgent.config_issue(next_cfg)
+			if not issue.is_empty():
+				dialog.title = issue
+				if mod_in.text.strip_edges().is_empty():
+					mod_in.grab_focus()
+				else:
+					ep_in.grab_focus()
+				return
 		_save_smolagents_cfg(next_cfg)
 		_save_model_profile(next_cfg)
 		dialog.queue_free()
@@ -1578,11 +1666,11 @@ func update_header() -> void:
 	if is_instance_valid(dock_action_btn) and not vessel.is_empty():
 		var near_pid := flight.nearby_port(vessel)
 		if vessel.get("dock", 0) != 0:
-			dock_action_btn.text = "离港  E"
+			dock_action_btn.text = key_caption("离港","E")
 		elif near_pid > 0 and world.ports.has(near_pid):
-			dock_action_btn.text = "停靠 %s  E" % world.ports[near_pid].name
+			dock_action_btn.text = key_caption("停靠 %s" % world.ports[near_pid].name,"E")
 		else:
-			dock_action_btn.text = "停靠 / 离港  E"
+			dock_action_btn.text = key_caption("停靠 / 离港","E")
 	if is_instance_valid(tabs):
 		update_campaign_button()
 		var ship_count := 0
@@ -1592,7 +1680,7 @@ func update_header() -> void:
 		for btn in tabs.get_children():
 			if btn is Button and (btn.text == "资产" or btn.text.begins_with("资产 (")):
 				btn.text = "资产 (%d)" % ship_count if ship_count > 0 else "资产"
-	jump_button.text = "跃入星系  M" if galaxy else "引力点跃迁  M"
+	jump_button.text = key_caption("跃入星系" if galaxy else "引力点跃迁","M")
 	jump_button.tooltip_text = "靠近星系信标后跃入。" if galaxy else "离港后前往恒星附近的引力点；必须进入 %d 范围。" % Celestial.JUMP_RANGE
 	var objective := Story.objective(world)
 	var watched := viewed_ship()
@@ -1608,6 +1696,9 @@ func update_header() -> void:
 func refresh() -> void:
 	if not playing:
 		return
+	if arena_display_suspended:
+		arena_refresh_requested = true
+		return
 	var scroll_node: ScrollContainer = side_panel.get_node_or_null("Column/Scroll") if is_instance_valid(side_panel) else null
 	if scroll_node != null:
 		UIKit.scroll_pos[tab] = scroll_node.scroll_vertical
@@ -1622,16 +1713,22 @@ func refresh() -> void:
 				btn.button_pressed = is_cur
 				btn.add_theme_color_override("font_color", GOLD if is_cur else INK)
 	var docked := dock_view.sync()
+	if mobile_play and docked != mobile_was_docked:
+		mobile_was_docked = docked
+		if side_collapsed == docked:
+			toggle_side_panel()
 	if galaxy or world.succession:
 		system_chart = false
 	chart_button.visible = not galaxy and not world.succession
-	chart_button.text = ("返回港口  C" if docked else "返回近景  C") if system_chart else "本星系星图  C"
+	chart_button.text = key_caption(("返回港口" if docked else "返回近景") if system_chart else "本星系星图","C")
 	canvas.chart_mode = system_chart
 	canvas.set("chart_selected",chart_target)
 	tactics_button.visible = not galaxy and not world.succession
 	if docked or galaxy or world.succession:
 		set_tactics(false)
 	quick_actions.visible = not docked and not tactics.visible
+	if is_instance_valid(touch_deck):
+		touch_deck.visible = agent_bridge == null and not docked and not tactics.visible and not system_chart and not world.succession and watch_ship_id == 0 and not world.ride().is_empty()
 	if world.succession:
 		hud.successor(body)
 		if is_instance_valid(canvas):
@@ -1663,6 +1760,8 @@ func step_simulation(move: Vector2, shield: bool, fire: bool, aim: Vector2, aimi
 	flight.step(1.0 / 60.0, move, shield, fire, aim, aiming, boost)
 
 func _physics_process(delta: float) -> void:
+	if mobile_background:
+		return
 	if toast_timer > 0.0 and is_instance_valid(toast_panel):
 		toast_timer -= delta
 		if toast_timer <= 0.0:
@@ -1677,7 +1776,11 @@ func _physics_process(delta: float) -> void:
 		return
 	var cursor := canvas.visible and not tactics.visible and not system_chart and canvas.get_global_rect().has_point(get_global_mouse_position())
 	var point: Vector2 = canvas.location(canvas.get_local_mouse_position()) if cursor else Vector2.ZERO
-	if agent_bridge == null:
+	if agent_bridge == null and is_instance_valid(touch_deck) and touch_deck.is_visible_in_tree():
+		var aimed: bool = touch_deck.firing or fire_requested
+		var touch_aim: Vector2 = touch_deck.world_point(touch_deck.aim_at) if aimed else Vector2.ZERO
+		step_simulation(touch_deck.movement,touch_deck.shield,aimed,touch_aim,aimed,touch_deck.boost)
+	elif agent_bridge == null:
 		step_simulation(Input.get_vector(&"left", &"right", &"up", &"down"), Input.is_physical_key_pressed(KEY_SHIFT),
 			cursor and (fire_requested or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)), point, cursor, Input.is_physical_key_pressed(KEY_CTRL))
 	elif DisplayServer.get_name() != "headless" and canvas.visible and not tactics.visible:
@@ -1756,7 +1859,49 @@ func _input(event: InputEvent) -> void:
 			trade_table.close()
 			get_viewport().set_input_as_handled()
 		return
+	if mobile_play and playing and is_instance_valid(touch_deck) and touch_deck.is_visible_in_tree():
+		if touch_deck.handle(event):
+			get_viewport().set_input_as_handled()
+			return
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and canvas.get_global_rect().has_point(event.position):
+			return
+	if agent_bridge != null and mobile_play and (event is InputEventScreenTouch or event is InputEventScreenDrag):
+		return
 	InputController.handle(self,event)
+
+func _notification(what: int) -> void:
+	if not mobile_play or not is_inside_tree():
+		return
+	if what in [NOTIFICATION_APPLICATION_PAUSED,NOTIFICATION_APPLICATION_RESUMED]:
+		mobile_background = what == NOTIFICATION_APPLICATION_PAUSED
+		if is_instance_valid(arena):
+			for child in arena.get_children():
+				if child is MobileModelAgent:
+					child.suspended = mobile_background
+					if not mobile_background:
+						child.request_time = Time.get_ticks_msec()
+	if what == NOTIFICATION_APPLICATION_PAUSED and playing:
+		if is_instance_valid(touch_deck):
+			touch_deck.reset_input()
+		set_speed(0)
+		if not test_profile and not world.succession and not world.ride().get("locked",false):
+			save_game(AUTO,true)
+	elif what == NOTIFICATION_WM_GO_BACK_REQUEST:
+		var dialog := get_window().get_last_exclusive_window()
+		if dialog != null and dialog != get_window():
+			dialog.close_requested.emit()
+		elif is_instance_valid(trade_table):
+			trade_table.close()
+		elif playing and tactics.visible:
+			set_tactics(false)
+		elif playing and system_chart:
+			toggle_system_chart()
+		elif playing:
+			confirm_title()
+		elif has_node("TitleMenu"):
+			get_tree().quit()
+		else:
+			show_title()
 
 func open_strategic_map(initial_mode: String = "strategic", enemy_flag: int = -1) -> void:
 	if not playing or world.succession:
@@ -1795,6 +1940,8 @@ func save_game(path: String, silent: bool = false) -> bool:
 		if not silent:
 			say("交火中不能保存。")
 		return false
+	if mobile_play and arena != null and arena.active:
+		arena._sync_campaign_slots()
 	if not Saves.write(world, path, path == BEFORE):
 		say("写入存档失败。")
 		return false
@@ -1810,6 +1957,8 @@ func load_game(path: String) -> bool:
 		return false
 	if arena != null and arena.active:
 		arena.stop_arena(false)
+	if is_instance_valid(mobile_runner):
+		_stop_takeover()
 	run_bridge()
 	say("已恢复同一宇宙；时间已暂停。")
 	return true

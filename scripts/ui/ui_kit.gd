@@ -217,7 +217,7 @@ static func action_button(parent: Node, caption: String, action: Callable, varia
 			btn.add_theme_color_override("font_color", Color("ffb3b0"))
 	if not enabled and not disabled_reason.is_empty():
 		btn.tooltip_text = "不可用：" + disabled_reason
-	btn.pressed.connect(action)
+	btn.pressed.connect(action, CONNECT_DEFERRED if OS.has_feature("android") else 0)
 	parent.add_child(btn)
 	return btn
 
