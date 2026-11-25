@@ -122,6 +122,7 @@ func _ready() -> void:
 	if mobile_play:
 		get_window().content_scale_size = Vector2i(1280,800)
 		get_tree().quit_on_go_back = false
+		get_tree().node_added.connect(_configure_touch_scroll)
 	for binding in [[&"left", KEY_A], [&"right", KEY_D], [&"up", KEY_W], [&"down", KEY_S]]:
 		if not InputMap.has_action(binding[0]):
 			InputMap.add_action(binding[0])
@@ -239,6 +240,23 @@ func scroller(parent: Node) -> VBoxContainer:
 	rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	return rows
 
+func _configure_touch_scroll(node: Node) -> void:
+	if node is ScrollContainer and is_ancestor_of(node) and not node.get_window() is PopupMenu:
+		node.scroll_deadzone = maxi(node.scroll_deadzone, 10)
+		return
+	if not (node is BaseButton or node is PanelContainer or node is Panel):
+		return
+	var parent := node.get_parent()
+	while parent is Control and not parent is ScrollContainer:
+		parent = parent.get_parent()
+	if not parent is ScrollContainer or not is_ancestor_of(parent):
+		return
+	# Let Godot's scroll gesture cancel the button press once the finger moves.
+	if node.mouse_filter == Control.MOUSE_FILTER_STOP:
+		node.mouse_filter = Control.MOUSE_FILTER_PASS
+	if node is BaseButton:
+		node.action_mode = BaseButton.ACTION_MODE_BUTTON_RELEASE
+
 func clear(parent: Node) -> void:
 	for child in parent.get_children():
 		if child == audio or child == glossary or child == agent_overlay or child == arena:
@@ -341,7 +359,7 @@ func show_creator() -> void:
 		size_row.add_child(input)
 		creator[config[0]] = input
 	title(sector, "核心势力预设  /  地盘和外交仍由种子生成；可自订", 14, DIM)
-	var presets := scroller(sector)
+	var presets := vbox(sector) if mobile_play else scroller(sector)
 	for number in range(8):
 		var row := hbox(presets)
 		title(row, "%02d" % (number + 1), 13, DIM)

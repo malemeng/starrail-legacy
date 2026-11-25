@@ -126,6 +126,59 @@ def observe_port(directory, name, pid):
         print(name, "at port in foreground", second, "seconds, pid", pid, flush=True)
 
 
+def thumb_top(image, right_inset):
+    # Both lists anchor their scrollbar to the right with a fixed logical margin.
+    w, h = image.size
+    x = w - round(h * right_inset)
+    length = 0
+    for y in range(int(h * .15), int(h * .93)):
+        r, g, b = image.getpixel((x, y))
+        if 35 <= r <= 60 and 70 <= g <= 100 and 95 <= b <= 130:
+            length += 1
+            if length >= h * .12:
+                return (y - length + 1) / h
+        else:
+            length = 0
+    return 1.0
+
+
+def check_button_scroll(directory):
+    top = wait_screen(directory, "creator", lambda frame: .19 < thumb_top(frame, .026) < .24)
+    initial_position = thumb_top(top, .026)
+    h = top.height
+    # Start on the outfit selector. Its popup used to capture the initial press.
+    x = round(h * .66)
+    shell("input", "swipe", x, round(h * .81), x, round(h * .37), 450)
+    wait_screen(directory, "swipe-on-option", lambda frame: .25 < thumb_top(frame, .026) < .40)
+    # The newly revealed Random Appearance button must scroll back without rerolling.
+    x = round(h * .20)
+    shell("input", "swipe", x, round(h * .85), x, round(h * .98), 400)
+    restored = wait_screen(directory, "swipe-on-button", lambda frame: thumb_top(frame, .026) == initial_position)
+    portrait = tuple(round(h * edge) for edge in (.15, .275, .29, .43))
+    assert top.crop(portrait).tobytes() == restored.crop(portrait).tobytes(), "Drag activated the button"
+    print("Dragged from an option and a button in both directions; portrait unchanged", flush=True)
+
+
+def check_market_scroll(directory, w, h):
+    # Open the warehouse from the station briefing.
+    shell("input", "tap", w - round(h * .56), round(h * .31))
+    at_top = lambda frame: at_port(frame) and .15 <= thumb_top(frame, .043) < .21
+    wait_screen(directory, "warehouse", at_top)
+    x = w - round(h * .08)
+    shell("input", "swipe", x, round(h * .75), x, round(h * .25), 450)
+    wait_screen(directory, "warehouse-swiped", lambda frame: at_port(frame) and .30 < thumb_top(frame, .043) < .80)
+    shell("input", "swipe", x, round(h * .31), x, round(h * .91), 450)
+    wait_screen(directory, "warehouse-restored", at_top)
+    shell("input", "tap", x, round(h * .75))
+    # The quick quote dialog covers the HUD and draws its top border at 14.5% height.
+    def quote_open(frame):
+        return not at_port(frame) and any(
+            all(frame.getpixel((round(w * f), y)) == (72, 96, 114) for f in (.30, .50, .70))
+            for y in range(round(h * .145) - 2, round(h * .145) + 3))
+    wait_screen(directory, "warehouse-quote", quote_open)
+    print("Warehouse trade button scrolled the list; a separate tap opened the quote", flush=True)
+
+
 def exercise(tag, candidate):
     directory = RESULTS / tag
     directory.mkdir(exist_ok=True)
@@ -156,8 +209,7 @@ def exercise(tag, candidate):
             image = wait_screen(directory, "second-launch", primary_button)
             pid = shell("pidof", PACKAGE)
             shell("input", "tap", *primary_button(image))
-            wait_screen(directory, "creator", lambda frame: not primary_button(frame) and frame.getextrema()[1][1] > 150)
-            time.sleep(1)
+            check_button_scroll(directory)
             shell("input", "tap", int(h*.11), int(h*.92))
             observe_port(directory, "new-campaign", pid)
             # New Game writes an arrival save. Continue must load it in a fresh process.
@@ -167,6 +219,7 @@ def exercise(tag, candidate):
             pid = shell("pidof", PACKAGE)
             shell("input", "tap", *primary_button(image))
             observe_port(directory, "continued-campaign", pid)
+            check_market_scroll(directory, w, h)
     finally:
         logs = adb("logcat", "-d")
         (directory / "logcat.txt").write_bytes(logs)

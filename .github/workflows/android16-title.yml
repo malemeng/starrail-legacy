@@ -6,10 +6,10 @@ on:
       release:
         description: Android release tag to install
         required: true
-        default: android-0.1.2
+        default: android-0.1.3
       baseline:
         description: Optional earlier Android release for comparison
-        default: android-0.1.1
+        default: android-0.1.2
 
 permissions:
   contents: read
