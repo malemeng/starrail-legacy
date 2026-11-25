@@ -25,6 +25,19 @@ func run() -> void:
 	game.mobile_play = true
 	game.test_profile = true
 	root.add_child(game)
+	var previous_idle := OS.low_processor_usage_mode
+	game.show_title()
+	var title = game.get_node("TitleMenu")
+	var replay = title.replay
+	check(title.battle == null and title.find_children("*","SubViewport",true,false).is_empty(),"mobile menu never starts a combat world or an off-screen battle viewport")
+	check(replay.tile.atlas.get_size() == Vector2(replay.FRAME*replay.GRID),"all replay frames fit in one imported texture")
+	var texture = replay.texture
+	var first: Rect2 = replay.tile.region
+	for i in replay.GRID.x*replay.GRID.y:
+		replay.next_frame()
+	check(replay.tile.region == first and replay.texture == texture,"replay loops without reallocating the texture")
+	game.show_creator()
+	check(OS.low_processor_usage_mode == previous_idle,"leaving the mobile title restores the campaign rendering policy")
 	game.world.new_game({"seed":"android-flight","systems":12,"factions":3})
 	game.run_bridge()
 	game.set_physics_process(false)

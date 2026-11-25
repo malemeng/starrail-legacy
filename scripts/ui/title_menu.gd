@@ -1,11 +1,11 @@
 extends Control
 
-const BattleView = preload("res://scripts/ui/title_battle.gd")
 const GOLD := Color("ecc797")
 const PAPER := Color("e7edf0")
 const MUTED := Color("98aebd")
 var game
 var battle: Control
+var replay: TextureRect
 var column := VBoxContainer.new()
 var saves := VBoxContainer.new()
 var choices := VBoxContainer.new()
@@ -17,10 +17,16 @@ func open(host) -> void:
 	game = host
 	name = "TitleMenu"
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	battle = BattleView.new()
-	battle.remember_lineup = not game.test_profile
-	add_child(battle)
-	battle.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	if game.mobile_play:
+		replay = load("res://scripts/ui/mobile_title_replay.gd").new()
+		add_child(replay)
+		replay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		set_process(false)
+	else:
+		battle = load("res://scripts/ui/title_battle.gd").new()
+		battle.remember_lineup = not game.test_profile
+		add_child(battle)
+		battle.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var shadow := TextureRect.new()
 	var ramp := Gradient.new()
 	ramp.offsets = PackedFloat32Array([0.0,0.27,0.52,0.80,1.0])
@@ -87,15 +93,40 @@ func open(host) -> void:
 	feed.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	feed.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var shuffle := Button.new()
-	shuffle.text = "换一场"
 	shuffle.flat = true
-	shuffle.tooltip_text = "重新抽选交战舰队"
-	shuffle.pressed.connect(battle.start_round)
+	if game.mobile_play:
+		feed.text = "开场战斗回放"
+		shuffle.text = "暂停回放"
+		shuffle.pressed.connect(func():
+			replay.timer.paused = not replay.timer.paused
+			shuffle.text = "继续回放" if replay.timer.paused else "暂停回放")
+		var report := Button.new()
+		report.text = "退出诊断"
+		report.flat = true
+		report.pressed.connect(show_exit_report,CONNECT_DEFERRED)
+		broadcast.add_child(report)
+	else:
+		shuffle.text = "换一场"
+		shuffle.tooltip_text = "重新抽选交战舰队"
+		shuffle.pressed.connect(battle.start_round)
 	broadcast.add_child(shuffle)
 	resized.connect(arrange)
 	column.minimum_size_changed.connect(arrange.call_deferred)
 	arrange()
 	choices.get_child(0).grab_focus()
+
+func show_exit_report() -> void:
+	var dialog := AcceptDialog.new()
+	dialog.title = "安卓退出诊断"
+	dialog.dialog_text = preload("res://scripts/services/android_exit_report.gd").describe()
+	dialog.add_button("复制",true,"copy")
+	dialog.custom_action.connect(func(action):
+		if action == "copy":
+			DisplayServer.clipboard_set(dialog.dialog_text))
+	dialog.confirmed.connect(dialog.queue_free)
+	dialog.close_requested.connect(dialog.queue_free)
+	add_child(dialog)
+	dialog.popup_centered()
 
 func menu_button(parent: VBoxContainer, caption: String, action: Callable, primary: bool = false) -> void:
 	var button := Button.new()
