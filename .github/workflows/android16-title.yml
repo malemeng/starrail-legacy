@@ -61,7 +61,8 @@ jobs:
       - name: Boot Android 16 and exercise the installed releases
         run: |
           export PATH="$ANDROID_HOME/platform-tools:$PATH"
-          "$ANDROID_HOME/emulator/emulator" -avd api36 -no-window -no-audio -no-boot-anim -no-snapshot -accel on -gpu swiftshader_indirect -cores 2 -memory 3072 > results/emulator.log 2>&1 &
+          # The legacy SwiftShader GLES translator rejects Godot's 2D canvas shader.
+          "$ANDROID_HOME/emulator/emulator" -avd api36 -no-window -no-audio -no-boot-anim -no-snapshot -accel on -gpu swangle -cores 2 -memory 3072 > results/emulator.log 2>&1 &
           emulator_pid=$!
           trap 'kill "$emulator_pid" 2>/dev/null || true' EXIT
           booted=false
