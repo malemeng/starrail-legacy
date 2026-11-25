@@ -60,10 +60,18 @@ def report_visible(image):
 
 def wait_screen(directory, name, matches):
     deadline = time.monotonic()+65
+    missing_since = None
     while time.monotonic() < deadline:
         image = screenshot(directory, name)
         if matches(image):
             return image
+        pid = subprocess.run(["adb","shell","pidof",PACKAGE], capture_output=True, timeout=10)
+        if pid.stdout.strip():
+            missing_since = None
+        elif missing_since is None:
+            missing_since = time.monotonic()
+        elif time.monotonic()-missing_since > 4:
+            raise RuntimeError(f"Game process exited before {name}")
         time.sleep(1)
     raise RuntimeError(f"Did not reach {name}")
 

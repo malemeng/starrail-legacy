@@ -6,10 +6,10 @@ on:
       release:
         description: Android release tag to install
         required: true
-        default: android-0.1.1
+        default: android-0.1.2
       baseline:
         description: Optional earlier Android release for comparison
-        default: android-0.1.0
+        default: android-0.1.1
 
 permissions:
   contents: read
@@ -73,6 +73,9 @@ jobs:
           if [[ "$booted" != true ]]; then tail -100 results/emulator.log; exit 1; fi
           adb shell input keyevent KEYCODE_WAKEUP
           adb shell wm dismiss-keyguard
+          adb shell settings put secure immersive_mode_confirmations confirmed
+          adb shell settings put system screen_off_timeout 1800000
+          adb shell svc power stayon true
           adb shell settings put global window_animation_scale 0
           adb shell settings put global transition_animation_scale 0
           adb shell settings put global animator_duration_scale 0

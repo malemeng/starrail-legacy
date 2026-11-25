@@ -107,10 +107,11 @@ static func pack_pcm(samples: PackedFloat32Array, loop: bool = false) -> AudioSt
 	stream.mix_rate = SAMPLE_RATE
 	stream.stereo = false
 	stream.data = data
-	if loop:
+	if loop and samples.size() > 1:
 		stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
 		stream.loop_begin = 0
-		stream.loop_end = samples.size()
+		# Godot's PCM mixer can read the loop endpoint inclusively.
+		stream.loop_end = samples.size() - 1
 	return stream
 
 static func synth_tone(duration: float, start_hz: float, end_hz: float, gain: float, noise_mix: float, wave: String) -> AudioStreamWAV:

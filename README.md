@@ -6,7 +6,7 @@
 
 [下载 Windows 64 位试玩版（ZIP）](https://github.com/malemeng/starrail-legacy/releases/latest/download/StarrailLegacy-Windows-x64.zip) · 完整解压，保留同目录的 `fleet_collision.dll`，双击 `StarrailLegacy.exe` 即可离线游玩。
 
-[下载安卓横屏试玩版 0.1.1（APK）](https://github.com/malemeng/starrail-legacy/releases/download/android-0.1.1/StarrailLegacy-Android.apk) · 适用于 Android 7.0 及以上的 ARM64 手机，支持触屏驾驶、外部模型托管和多 Agent 竞技场。已有 0.1.0 可覆盖安装。
+[下载安卓横屏试玩版 0.1.2（APK）](https://github.com/malemeng/starrail-legacy/releases/download/android-0.1.2/StarrailLegacy-Android.apk) · 适用于 Android 7.0 及以上的 ARM64 手机，支持触屏驾驶、外部模型托管和多 Agent 竞技场。此版修复了 Android 16 上开场环境音循环时的退出问题，已有 0.1.0 或 0.1.1 可覆盖安装。
 
 ## 实机演示
 
