@@ -1,5 +1,5 @@
-name: Android 16 title smoke test
-run-name: Android 16 startup · ${{ inputs.release }}
+name: Android 16 title and campaign smoke test
+run-name: Android 16 startup and continue · ${{ inputs.release }}
 on:
   workflow_dispatch:
     inputs:
@@ -80,7 +80,7 @@ jobs:
           adb shell settings put global window_animation_scale 0
           adb shell settings put global transition_animation_scale 0
           adb shell settings put global animator_duration_scale 0
-          adb shell wm size 720x1280
+          adb shell wm size 1440x3200
           "$RUNNER_TEMP/qa-python/bin/python" -u tools/android_title_smoke.py
       - name: Upload screens, exit records and device logs
         if: always()

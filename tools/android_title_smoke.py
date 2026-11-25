@@ -38,7 +38,7 @@ def primary_button(image):
         r, g, b = image.getpixel((int(width*x), y))
         return r > 195 and 150 < g < 230 and r > g+14 and g > b+18
     rows = [y for y in range(int(height*.36), int(height*.77))
-            if all(gold(x, y) for x in (.19, .24, .31))]
+            if all(gold(x, y) for x in (.18, .21, .24))]
     if len(rows) >= height*.02:
         return int(width*.23), rows[len(rows)//2]
     return None
@@ -107,6 +107,25 @@ def start():
     shell("am", "start", "-W", "-n", ACTIVITY)
 
 
+def check_foreground(pid):
+    assert shell("pidof", PACKAGE) == pid, "Game process changed"
+    activities = shell("dumpsys", "activity", "activities").splitlines()
+    assert any(PACKAGE in line and ("topResumedActivity" in line or "mResumedActivity" in line)
+               for line in activities), "Lost foreground"
+
+
+def observe_port(directory, name, pid):
+    wait_screen(directory, name, at_port)
+    check_foreground(pid)
+    since = time.monotonic()
+    for second in (10, 60):
+        time.sleep(max(0, second - (time.monotonic() - since)))
+        check_foreground(pid)
+        image = screenshot(directory, f"{name}-{second}s")
+        assert at_port(image), f"Port disappeared in {name} after {second}s"
+        print(name, "at port in foreground", second, "seconds, pid", pid, flush=True)
+
+
 def exercise(tag, candidate):
     directory = RESULTS / tag
     directory.mkdir(exist_ok=True)
@@ -121,10 +140,7 @@ def exercise(tag, candidate):
         since = time.monotonic()
         for second in ([10, 30, 120] if candidate else [10, 45]):
             time.sleep(max(0, second-(time.monotonic()-since)))
-            assert shell("pidof", PACKAGE) == pid, f"Process changed at {second}s"
-            focus = shell("dumpsys", "activity", "activities")
-            assert any(PACKAGE in line and ("topResumedActivity" in line or "mResumedActivity" in line)
-                       for line in focus.splitlines()), "Lost foreground"
+            check_foreground(pid)
             image = screenshot(directory, f"idle-{second}s")
             if not primary_button(image) and dismiss_launcher_anr(image):
                 image = screenshot(directory, f"idle-{second}s")
@@ -132,18 +148,25 @@ def exercise(tag, candidate):
             print(tag, "title in foreground", second, "seconds, pid", pid)
         if candidate:
             w, h = image.size
-            shell("input", "tap", int(w*.865), int(h*.94))
+            shell("input", "tap", w - int(h*.24), int(h*.94))
             wait_screen(directory, "exit-report", report_visible)
             # Restart to exercise a second cold launch before entering the campaign.
             shell("am", "force-stop", PACKAGE)
             start()
             image = wait_screen(directory, "second-launch", primary_button)
+            pid = shell("pidof", PACKAGE)
             shell("input", "tap", *primary_button(image))
             wait_screen(directory, "creator", lambda frame: not primary_button(frame) and frame.getextrema()[1][1] > 150)
             time.sleep(1)
-            shell("input", "tap", int(w*.065), int(h*.92))
-            wait_screen(directory, "campaign", at_port)
-            print(tag, "character creation and campaign reached")
+            shell("input", "tap", int(h*.11), int(h*.92))
+            observe_port(directory, "new-campaign", pid)
+            # New Game writes an arrival save. Continue must load it in a fresh process.
+            shell("am", "force-stop", PACKAGE)
+            start()
+            image = wait_screen(directory, "title-with-save", primary_button)
+            pid = shell("pidof", PACKAGE)
+            shell("input", "tap", *primary_button(image))
+            observe_port(directory, "continued-campaign", pid)
     finally:
         logs = adb("logcat", "-d")
         (directory / "logcat.txt").write_bytes(logs)
@@ -158,7 +181,8 @@ def main():
     assert sdk == "36", f"Expected Android 16, found API {sdk}"
     (RESULTS / "device.txt").write_text("\n".join([
         "API "+sdk, shell("getprop","ro.build.fingerprint"),
-        shell("getprop","ro.product.cpu.abi"), "page size "+shell("getconf","PAGE_SIZE")]))
+        "ABIs "+shell("getprop","ro.product.cpu.abilist"), shell("wm", "size"),
+        "page size "+shell("getconf","PAGE_SIZE")]))
     if os.environ.get("BASELINE"):
         try:
             exercise(os.environ["BASELINE"], False)
