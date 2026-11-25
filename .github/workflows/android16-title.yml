@@ -30,9 +30,18 @@ jobs:
         run: |
           mkdir -p results downloads
           sudo chmod a+rw /dev/kvm
+          export ANDROID_USER_HOME="$RUNNER_TEMP/android-user"
+          export ANDROID_EMULATOR_HOME="$ANDROID_USER_HOME"
+          export ANDROID_AVD_HOME="$ANDROID_USER_HOME/avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          printf '%s\n' "ANDROID_USER_HOME=$ANDROID_USER_HOME" "ANDROID_EMULATOR_HOME=$ANDROID_EMULATOR_HOME" "ANDROID_AVD_HOME=$ANDROID_AVD_HOME" >> "$GITHUB_ENV"
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           "$SDKMANAGER" "emulator" "platform-tools" "$IMAGE"
-          echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd -n api36 -k "$IMAGE" -d pixel_6
+          profile="$ANDROID_AVD_HOME/api36.avd"
+          echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd -n api36 -k "$IMAGE" -d pixel_6 -p "$profile"
+          test -s "$profile/config.ini"
+          printf 'avd.ini.encoding=UTF-8\npath=%s\ntarget=android-36\n' "$profile" > "$ANDROID_AVD_HOME/api36.ini"
+          "$ANDROID_HOME/emulator/emulator" -list-avds | grep -Fx api36
           python3 -m venv "$RUNNER_TEMP/qa-python"
           "$RUNNER_TEMP/qa-python/bin/pip" -q install pillow
       - name: Download the published APKs and verify their digests
@@ -55,7 +64,13 @@ jobs:
           "$ANDROID_HOME/emulator/emulator" -avd api36 -no-window -no-audio -no-boot-anim -no-snapshot -accel on -gpu swiftshader_indirect -cores 2 -memory 3072 > results/emulator.log 2>&1 &
           emulator_pid=$!
           trap 'kill "$emulator_pid" 2>/dev/null || true' EXIT
-          timeout 360 bash -c 'adb wait-for-device; until [[ "$(adb shell getprop sys.boot_completed | tr -d "\r")" == "1" ]]; do sleep 2; done'
+          booted=false
+          for _ in {1..120}; do
+            if ! kill -0 "$emulator_pid" 2>/dev/null; then cat results/emulator.log; exit 1; fi
+            if [[ "$(timeout 4 adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; then booted=true; break; fi
+            sleep 2
+          done
+          if [[ "$booted" != true ]]; then tail -100 results/emulator.log; exit 1; fi
           adb shell input keyevent KEYCODE_WAKEUP
           adb shell wm dismiss-keyguard
           adb shell settings put global window_animation_scale 0
