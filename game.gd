@@ -823,6 +823,8 @@ func run_bridge() -> void:
 	stage_wrap.add_child(toast_panel)
 	toast_label = title(toast_panel, "", 13, GOLD, true)
 	toast_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	toast_label.max_lines_visible = 3
+	toast_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	if mobile_play:
 		touch_deck = preload("res://scripts/ui/touch_flight.gd").new()
 		touch_deck.game = self
@@ -889,6 +891,8 @@ func run_bridge() -> void:
 			campaign_button = tab_button
 	body = side_panel.get_node("Column/Scroll/Body")
 	footer = title(layout, "", 13, DIM, true)
+	footer.max_lines_visible = 2
+	footer.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	refresh()
 
 func update_campaign_button() -> void:
@@ -918,10 +922,11 @@ func say(message: String) -> void:
 	notice_text = message
 	if arena_display_suspended:
 		return
+	var compact := " ".join(message.split("\n", false)).strip_edges()
 	if is_instance_valid(footer):
-		footer.text = message
-	if is_instance_valid(toast_panel) and is_instance_valid(toast_label) and not message.is_empty():
-		toast_label.text = message
+		footer.text = compact
+	if is_instance_valid(toast_panel) and is_instance_valid(toast_label) and not compact.is_empty():
+		toast_label.text = compact
 		toast_panel.show()
 		toast_panel.modulate.a = 1.0
 		toast_timer = 4.2
@@ -1210,17 +1215,17 @@ func _open_smolagents_dialog() -> void:
 	dialog.add_child(box)
 	var ep_row := hbox(box)
 	title(ep_row, "API 地址", 14, DIM).custom_minimum_size.x = 88
-	var ep_in := field(ep_row, str(cfg.api_base), 160)
+	var ep_in := field(ep_row, str(cfg.api_base), 512)
 	if mobile_play:
 		ep_in.placeholder_text = "模型服务地址，含 /v1"
 	var mod_row := hbox(box)
 	title(mod_row, "模型名称", 14, DIM).custom_minimum_size.x = 88
-	var mod_in := field(mod_row, str(cfg.model), 80)
+	var mod_in := field(mod_row, str(cfg.model), 160)
 	if mobile_play:
 		mod_in.placeholder_text = "填写服务商提供的模型 ID"
 	var key_row := hbox(box)
 	title(key_row, "API Key", 14, DIM).custom_minimum_size.x = 88
-	var key_in := field(key_row, str(cfg.api_key), 160)
+	var key_in := field(key_row, str(cfg.api_key), 512)
 	key_in.secret = true
 	if mobile_play:
 		key_in.placeholder_text = "按服务要求填写"
