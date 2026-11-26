@@ -18,9 +18,7 @@ var jet_count := 0
 var ship_capacity := 0
 
 func _ready() -> void:
-	var quad := QuadMesh.new()
-	quad.size = Vector2.ONE
-	steam = batch(quad, Steam)
+	steam = batch(ShipVisual.quad_mesh(), Steam)
 	shields = batch(arc_mesh(), Shield)
 	add_child(steam)
 	add_child(shields)

@@ -37,6 +37,26 @@ var last_pose := Transform2D.IDENTITY
 var have_pose := false
 var was_phased := false
 
+static func quad_mesh() -> ArrayMesh:
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = PackedVector3Array([
+		Vector3(-0.5, -0.5, 0.0),
+		Vector3(0.5, -0.5, 0.0),
+		Vector3(0.5, 0.5, 0.0),
+		Vector3(-0.5, 0.5, 0.0),
+	])
+	arrays[Mesh.ARRAY_TEX_UV] = PackedVector2Array([
+		Vector2(0.0, 0.0),
+		Vector2(1.0, 0.0),
+		Vector2(1.0, 1.0),
+		Vector2(0.0, 1.0),
+	])
+	arrays[Mesh.ARRAY_INDEX] = PackedInt32Array([0, 1, 2, 0, 2, 3])
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
+
 func _ready() -> void:
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	for layer_name in ["ThrustersGroup","BaseHullSprite","HardpointMounts","DecorativeParts","TurretMounts","HullEmissiveGlow","ShieldBubble"]:

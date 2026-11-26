@@ -25,13 +25,11 @@ var armor_dirty := false
 var used := 0
 
 func _ready() -> void:
-	var quad := QuadMesh.new()
-	quad.size = Vector2.ONE
 	multimesh = MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_2D
 	multimesh.use_colors = true
 	multimesh.use_custom_data = true
-	multimesh.mesh = quad
+	multimesh.mesh = ShipVisual.quad_mesh()
 	multimesh.instance_count = LIMIT
 	multimesh.visible_instance_count = 0
 	armor.fill(Color.WHITE)
