@@ -27,6 +27,8 @@ func run() -> void:
 	check(api.dispatch("new_game",{"seed":"wing-workshop","systems":12,"factions":3}).ok,"create a normal campaign")
 	var world = game.world
 	strafe_runs()
+	pursuit_distance("thunder_wing")
+	pursuit_distance("broadsword_wing")
 	var port: int = world.active().loc
 	var listing: Dictionary = api.observe().ports.filter(func(p): return p.id == port)[0]
 	check(listing.wing_catalog.size() == 31,"31 real workshop listings in port")
@@ -115,7 +117,7 @@ func strafe_runs() -> void:
 	enemy.battle.motion = Vector2(18,7)
 	enemy.battle.shield = true
 	enemy.battle.shield_arc_live = PI
-	var carrier: Dictionary = w.ships[w.ship(Hulls.kind_for_reference("condor"),0,0,0,0,enemy.pos-Vector2(700,0))]
+	var carrier: Dictionary = w.ships[w.ship(Hulls.kind_for_reference("condor"),0,0,w.RAIDERS,0,enemy.pos-Vector2(700,0))]
 	Battle.ensure_state(carrier)
 	Battle.ensure_state(enemy)
 	var squad: Dictionary
@@ -171,9 +173,44 @@ func strafe_runs() -> void:
 		if squad.sortie and Vector2(squad.pos).distance_to(carrier.pos)>70:
 			break
 	var damaged: Dictionary = squad.craft.front()
+	carrier.battle.vent=true
+	Battle.Wings.advance(w,carrier,{},1.0/60,Battle,[],[])
+	check(damaged.sortie and not damaged.returning,"a healthy attacking pilot retains its target when the carrier vents")
+	carrier.battle.vent=false
 	damaged.hp = damaged.max_hp*0.3
 	Battle.Wings.advance(w,carrier,enemy,1.0/60,Battle,[],[])
 	check(damaged.returning and squad.craft.any(func(unit): return unit.hp>0 and not unit.returning),"one badly damaged aircraft returns while its squadmates stay on mission")
+
+func pursuit_distance(id: String) -> void:
+	var w:=preload("res://world.gd").new()
+	w.new_game({"seed":"wing-attack-interval", "systems":12,"factions":3})
+	var t:=w.ride()
+	w.depart(t)
+	t.pos=Vector2(5400,5400)
+	var carrier:Dictionary=w.ships[w.ship(Hulls.kind_for_reference("condor"),0,0,0,0,t.pos-Vector2(620,0))]
+	carrier.fit.wings[0]=id
+	Battle.ensure_state(carrier)
+	Battle.ensure_state(t)
+	var fired: Array[float]=[]
+	var extreme:=0.0
+	var total:=0.0
+	var completed:=0
+	var t0:Vector2=t.pos
+	for tick in 3600:
+		t.pos=t0+Vector2(90*sin(tick/460.0),22*sin(tick/270.0))
+		t.battle.motion=Vector2(90*60/460.0*cos(tick/460.0),22*60/270.0*cos(tick/270.0))
+		Battle.Wings.advance(w,carrier,t,1.0/60,Battle,[],[])
+		var u:Dictionary=carrier.battle.fighter_wings[0].craft[0]
+		if not fired.is_empty() and u.sortie: extreme=maxf(extreme,Vector2(u.pos).distance_to(t.pos))
+		var did_fire:=false
+		for p in w.projectiles:
+			if p.get("bay",-1)==0 and p.get("airframe",-1)==0: did_fire=true
+		if did_fire: fired.append(tick/60.0)
+		completed=maxi(completed,u.get("run",{}).get("passes",0))
+		w.projectiles.clear()
+	for i in range(1,fired.size()): total+=fired[i]-fired[i-1]
+	print(id," 60s shots=", fired.size()," mean_gap=",snappedf(total/maxi(1,fired.size()-1),0.01)," farthest_post_shot=",snappedf(extreme,0.1)," passes=",completed)
+	check(fired.size()>=15 and completed>=5 and total/maxi(1,fired.size()-1)<4.0 and extreme<160.0,id+" turns back close enough for repeated fire")
 
 func exercise(world, id: String) -> bool:
 	var carrier: Dictionary = world.ride()

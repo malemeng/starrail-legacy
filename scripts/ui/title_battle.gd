@@ -12,9 +12,10 @@ const TURN_DISTANCE := 64.0
 
 # Exhibition ships have no owners, crew estates or campaign consequences.
 class Exhibition extends World:
+	var arena_extent := ARENA_HALF_SIZE
 	func movement_limit(kind: int) -> Vector2:
 		var reach := float(Battle.Defenses.geometry(kind).reach)
-		return (ARENA_HALF_SIZE - Vector2.ONE*reach).max(Vector2.ZERO)
+		return (arena_extent - Vector2.ONE*reach).max(Vector2.ZERO)
 
 	func ship(hull_type: int, owner: int, captain: int, flag: int, system: int, pos: Vector2, at_port: int = 0) -> int:
 		var limit := movement_limit(hull_type)
@@ -33,6 +34,9 @@ class Exhibition extends World:
 	func destruction(ship_id: int, _killer: int = 0) -> void:
 		if ships.has(ship_id):
 			var vessel: Dictionary = ships[ship_id]
+			if vessel.has("defense_port"):
+				StationAssault.disable(self,vessel)
+				return
 			var id := leave_ship_wreck(vessel,BLUE if vessel.flag == NEUTRAL else AMBER)
 			# The exhibition keeps the visible remains on its battle backdrop.
 			wrecks.erase(id)
@@ -133,8 +137,11 @@ func save_lineup() -> void:
 		history.set_value("battle","hulls",previous_hulls)
 		history.save(HISTORY)
 
+func blue_slot(slot: int) -> bool:
+	return slot < 3
+
 func deploy(slot: int, position_in_space: Vector2) -> Vector2:
-	var blue := slot < 3
+	var blue := blue_slot(slot)
 	var kind := lineup[slot]
 	var limit := world.movement_limit(kind)
 	var at := position_in_space.clamp(-limit,limit)
@@ -148,12 +155,16 @@ func deploy(slot: int, position_in_space: Vector2) -> Vector2:
 	ship.heading = (-Vector2(ship.pos)).angle()
 	ship.locked = true
 	ship.demo_slot = slot
+	configure_ship(ship,slot)
 	Battle.ensure_state(ship)
 	var visual := ShipVisual.new()
 	space.add_child(visual)
 	visuals[id] = visual
 	visual.sync(ship,BLUE if blue else AMBER)
 	return at
+
+func configure_ship(_ship: Dictionary, _slot: int) -> void:
+	pass
 
 func deploy_reserves() -> void:
 	var changed := false
@@ -176,7 +187,7 @@ func deploy_reserves() -> void:
 		changed = true
 	if changed: save_lineup()
 
-func start_round() -> void:
+func clear_round() -> void:
 	for visual: Node in visuals.values(): visual.queue_free()
 	visuals.clear()
 	world.ships.clear()
@@ -191,6 +202,9 @@ func start_round() -> void:
 	elapsed = 0.0
 	reserves.clear()
 	lineup.clear()
+
+func start_round() -> void:
+	clear_round()
 	var excluded := previous_hulls.duplicate()
 	for tonnage: int in [3,rng.randi_range(1,2),0,3,rng.randi_range(1,2),0]:
 		var kind := pick_hull(tonnage,excluded)
@@ -233,13 +247,13 @@ func _physics_process(delta: float) -> void:
 				nearest = gap
 				foe = candidate
 		Battle.tick(ship,delta,world)
-		if not foe.is_empty():
-			flight._engage_target(ship,foe,delta)
+		fight(ship,foe,delta)
 		# A ship system can blink or apply an impulse after the regular maneuver.
-		world.confine(ship)
-	Flight.HullContacts.resolve(world,0,starts,ARENA_HALF_SIZE)
+		if not ship.has("defense_port"):
+			world.confine(ship)
+	Flight.HullContacts.resolve(world,0,starts,world.arena_extent)
 	Battle.project(world,0,delta)
-	fields.begin(visuals.size(),delta)
+	fields.begin(world.ships.size(),delta)
 	for id: int in visuals.keys():
 		if world.ships.has(id):
 			var ship: Dictionary = world.ships[id]
@@ -247,9 +261,10 @@ func _physics_process(delta: float) -> void:
 			fields.add_vessel(visuals[id])
 		else:
 			var lost: Dictionary = visuals[id].ship
-			reserves.append({"slot":lost.demo_slot,"arrival":elapsed+rng.randf_range(1.4,2.8)})
+			replace_lost(lost)
 			visuals[id].queue_free()
 			visuals.erase(id)
+	update_auxiliaries()
 	fields.finish()
 	for i in range(flashes.size()-1,-1,-1):
 		flashes[i].age += delta
@@ -259,6 +274,16 @@ func _physics_process(delta: float) -> void:
 			if event.kind != "ship_breakup": flashes.append({"event":event,"age":0.0})
 			event_cursor = event.serial
 	effects.queue_redraw()
+
+func fight(ship: Dictionary, foe: Dictionary, delta: float) -> void:
+	if not foe.is_empty():
+		flight._engage_target(ship,foe,delta)
+
+func replace_lost(lost: Dictionary) -> void:
+	reserves.append({"slot":lost.demo_slot,"arrival":elapsed+rng.randf_range(1.4,2.8)})
+
+func update_auxiliaries() -> void:
+	pass
 
 func _draw() -> void:
 	if sky: draw_texture_rect(sky,Rect2(Vector2.ZERO,size),false,Color("929ba9"))

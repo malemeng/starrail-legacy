@@ -27,6 +27,22 @@ static func start(world, site: Dictionary, lead: Dictionary, flag: int, contract
 	var assault := {"actor":actor.id,"ship":lead.id,"flag":flag,"original_flag":site.flag,"firm":claimant,"operator":site.firm,
 		"contract":contract,"company_war":war,"nodes":[],"disabled":[],"started":world.day}
 	site.assault = assault
+	deploy_modules(world,site,lead.pos)
+	for guard: Dictionary in world.ships.values():
+		if guard.system != site.system or guard.layer or guard.captain in [0,actor.id] or guard.job.get("kind","") not in ["护航","巡逻","私掠"]:
+			continue
+		var belongs: bool = guard.get("station_owner",0) == site.id or (claimant > 0 and guard.get("firm",0) == claimant) or (site.flag >= 0 and guard.flag == site.flag)
+		if not belongs or guard.dock not in [0,site.id] or guard.pos.distance_to(site.pos) > 510.0 or world.can_operate(guard):
+			continue
+		if guard.dock == site.id:
+			world.depart(guard)
+		world.engage_ship(lead,guard,actor.id)
+		guard.locked = true
+	lead.locked = true
+	world.event("%s 拉响战斗警报，%d 个模块独立升盾迎战。" % [site.name,assault.nodes.size()])
+
+static func deploy_modules(world, site: Dictionary, threat_position: Vector2) -> void:
+	var assault: Dictionary = site.assault
 	var geom := Geometry.layout(site)
 	for i in geom.parts.size():
 		var part: Dictionary = geom.parts[i]
@@ -60,21 +76,9 @@ static func start(world, site: Dictionary, lead: Dictionary, flag: int, contract
 		gun.job = {"kind":"模块站防","label":Armament.label(world,site,i)}
 		gun.locked = true
 		# Shield and guns use the ordinary flux, cooldown, projectile and armour systems.
-		Battle.shield(gun,true,lead.pos)
+		Battle.shield(gun,true,threat_position)
 		gun.battle.shield_arc_live = TAU
 		assault.nodes.append(sid)
-	for guard: Dictionary in world.ships.values():
-		if guard.system != site.system or guard.layer or guard.captain in [0,actor.id] or guard.job.get("kind","") not in ["护航","巡逻","私掠"]:
-			continue
-		var belongs: bool = guard.get("station_owner",0) == site.id or (claimant > 0 and guard.get("firm",0) == claimant) or (site.flag >= 0 and guard.flag == site.flag)
-		if not belongs or guard.dock not in [0,site.id] or guard.pos.distance_to(site.pos) > 510.0 or world.can_operate(guard):
-			continue
-		if guard.dock == site.id:
-			world.depart(guard)
-		world.engage_ship(lead,guard,actor.id)
-		guard.locked = true
-	lead.locked = true
-	world.event("%s 拉响战斗警报，%d 个模块独立升盾迎战。" % [site.name,assault.nodes.size()])
 
 static func attacks(world, unit: Dictionary, gun: Dictionary) -> bool:
 	var battle: Dictionary = world.ports.get(gun.get("defense_port",0),{}).get("assault",{})

@@ -397,6 +397,13 @@ func show_title() -> void:
 	add_child(menu)
 	menu.open(self)
 
+func show_skirmish() -> void:
+	playing = false
+	reset_layout()
+	var skirmish := preload("res://scripts/ui/skirmish_menu.gd").new()
+	layout.add_child(skirmish)
+	skirmish.open(self)
+
 func open_cheat_console() -> void:
 	if cli_agent_mode or not playing:
 		return

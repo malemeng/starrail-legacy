@@ -71,6 +71,7 @@ func open(host) -> void:
 	if not latest.is_empty():
 		menu_button(choices,"继续航程",resume.bind(latest),true)
 	menu_button(choices,"新航程",game.show_creator,latest.is_empty())
+	menu_button(choices,"战斗沙盘",game.show_skirmish)
 	if not latest.is_empty(): menu_button(choices,"读取存档",switch_page.bind(true))
 	menu_button(choices,"退出游戏",func(): get_tree().quit())
 	menu_button(saves,"返回主菜单",switch_page.bind(false))

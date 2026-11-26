@@ -148,6 +148,26 @@ static func tint(disabled: bool, recoil: float) -> Color:
 	if disabled: return DISABLED
 	return Color.WHITE*(1.0+0.25*recoil) if recoil > 0.0 else Color.WHITE
 
+static func draw_station_mounts(canvas: CanvasItem, gun: Dictionary, hull_transform: Transform2D) -> void:
+	var angles: Array = gun.battle.get("turret_angles",[])
+	var recoils: Array = gun.battle.get("recoil",[])
+	var disabled: Array = gun.battle.get("disabled_slots",[])
+	for slot in gun.fit.weapons.size():
+		var id: String = gun.fit.weapons[slot]
+		if id == "":
+			continue
+		var mount := Hulls.slot_spec(gun.kind,slot)
+		var style := profile(id)
+		var angle := float(angles[slot]) if slot < angles.size() else deg_to_rad(float(mount.facing))
+		var recoil := float(recoils[slot]) if slot < recoils.size() else 0.0
+		var transform := pose(mount,style,angle,recoil)
+		transform.origin += Vector2(gun.mount_offsets[slot]) - Vector2(mount.offset)
+		transform = hull_transform * transform
+		var jammed: bool = slot < disabled.size() and float(disabled[slot])>0.0
+		draw_mount(canvas,transform,style.family,tint(jammed,recoil))
+		if recoil > 0.75 and not jammed:
+			canvas.draw_circle(transform*Vector2(7,0),1.9*recoil*hull_transform.x.length(),Color("ffe8aa"))
+
 static func draw_mount(canvas: CanvasItem, transform: Transform2D, family: int, color: Color) -> void:
 	canvas.draw_set_transform_matrix(transform)
 	canvas.draw_texture_rect(texture(family),Rect2(-SIZE*0.5,SIZE),false,color)

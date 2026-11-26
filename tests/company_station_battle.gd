@@ -172,9 +172,9 @@ func run() -> void:
 			print("Main air group frame ",frame," aircraft ",airborne)
 			if not film:
 				check(resumed.load_state(w.snapshot()) and resumed.ships[gun.id].battle.fighter_wings==gun.battle.fighter_wings,"airframe positions, separate runs and cooldowns survive mid-sortie save/load")
-		if film and not tracked.is_empty() and (chase_camera.is_empty() or chase_camera.hp<=0 or not chase_camera.sortie):
+		if film and not tracked.is_empty() and (chase_camera.is_empty() or chase_camera.hp<=0 or not chase_camera.sortie or chase_camera.returning):
 			for unit in tracked.get("craft",[]):
-				if unit.sortie and unit.hp>0:
+				if unit.sortie and unit.hp>0 and not unit.returning:
 					chase_camera = unit
 					break
 		frame_battle(lead,site,chase_camera,frame-follow_start if follow_start >= 0 else -1)

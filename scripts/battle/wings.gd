@@ -177,7 +177,9 @@ static func advance_squad(world, carrier: Dictionary, wing: Dictionary, spec: Di
 		units.append(new_airframe(wing,berth,bay,units.size(),unit_hp,true))
 	if units.size() > count+extra:
 		units.resize(count+extra)
-	var scramble: bool = combat.ready(carrier) and not enemy.is_empty() and Vector2(carrier.pos).distance_squared_to(enemy.pos) <= pow(engagement_range(spec),2)
+	var operational := engagement_range(spec)
+	var in_range := not enemy.is_empty() and Vector2(carrier.pos).distance_squared_to(enemy.pos) <= operational*operational
+	var launch_ready: bool = combat.ready(carrier)
 	var alive := 0
 	var flying := 0
 	var returning := 0
@@ -199,13 +201,22 @@ static func advance_squad(world, carrier: Dictionary, wing: Dictionary, spec: Di
 			carrier.battle.replacement_rate = maxf(0.12,float(carrier.battle.replacement_rate)-0.05)
 		unit.cool = maxf(0.0,float(unit.cool)-delta)
 		unit.scan_in = maxf(0.0,float(unit.scan_in)-delta)
-		if float(unit.hp) < unit_hp*0.40 or not scramble:
+		var mission_target := enemy if in_range else {}
+		# A carrier's overload stops new launches. Aircraft already committed to
+		# a pass can finish it even if their carrier vents or changes its target.
+		if unit.sortie and (not enemy.is_empty() or not launch_ready):
+			var run: Dictionary = unit.get("run",{})
+			var prior: Dictionary = world.ships.get(run.get("target",0),{})
+			if not prior.is_empty() and combat.available(prior,carrier.system) and world.enemy(carrier,prior) and Vector2(carrier.pos).distance_to(prior.pos)<=operational*1.12:
+				if mission_target.is_empty() or (run.get("phase","") in ["strafe","break"] and unit.pos.distance_to(prior.pos)<operational*0.7):
+					mission_target=prior
+		if float(unit.hp) < unit_hp*0.40 or mission_target.is_empty():
 			unit.returning = true
 		if not unit.sortie:
 			unit.pos = berth
 			unit.hp = minf(unit_hp,float(unit.hp)+delta*2.0)
 			unit.launch_in = maxf(0,float(unit.launch_in)-delta)
-			if scramble and unit.hp >= unit_hp*0.8 and unit.cool<=0 and unit.launch_in<=0:
+			if launch_ready and in_range and unit.hp >= unit_hp*0.8 and unit.cool<=0 and unit.launch_in<=0:
 				unit.returning = false
 				unit.sortie = true
 				unit.heading = berth.angle_to_point(enemy.pos)
@@ -221,7 +232,7 @@ static func advance_squad(world, carrier: Dictionary, wing: Dictionary, spec: Di
 					unit.sortie = false
 					unit.launch_in = 0.45+int(unit.index)*0.12
 			else:
-				attack(world,carrier,enemy,unit,spec,berth,bay*3+int(unit.index),delta,multiplier,missiles,airborne)
+				attack(world,carrier,mission_target,unit,spec,berth,bay*3+int(unit.index),delta,multiplier,missiles,airborne)
 		alive += 1
 		if not unit.reserve:
 			total_hp += float(unit.hp)
@@ -251,18 +262,18 @@ static func separation(unit: Dictionary, units: Array) -> Vector2:
 			push += apart/distance * (1.0-distance/26.0)
 	return push.limit_length()
 
-static func steer(wing: Dictionary, destination: Vector2, delta: float) -> void:
+static func steer(wing: Dictionary, destination: Vector2, delta: float, pace: float = 1.0) -> void:
 	var desired := (Vector2(wing.pos).direction_to(destination) + Vector2(wing.get("separation",Vector2.ZERO))*0.9).angle()
 	var heading := float(wing.get("heading",desired))
 	var turn := 2.7 if wing.role == "bomber" else (4.9 if wing.role == "interceptor" else 3.8)
 	var bank := absf(angle_difference(heading,desired))
-	wing.heading = rotate_toward(heading,desired,turn*delta)
-	var speed := float(wing.speed)*lerpf(1.0,0.62,clampf(bank/PI,0,1))
+	wing.heading = rotate_toward(heading,desired,turn*lerpf(1.7,1.0,pace)*delta)
+	var speed := float(wing.speed)*pace*lerpf(1.0,0.52,clampf(bank/PI,0,1))
 	wing.pos = Vector2(wing.pos) + Vector2.from_angle(wing.heading)*speed*delta
 
 ## Flanking gates move with the target, while the direction of each attack run
 ## stays fixed. Passing the target takes the squadron away before its next turn.
-static func strafe(wing: Dictionary, enemy: Dictionary, berth: Vector2, bay: int, reach: float, delta: float) -> bool:
+static func strafe(wing: Dictionary, enemy: Dictionary, berth: Vector2, bay: int, reach: float, delta: float) -> void:
 	var target: Vector2 = enemy.pos + Vector2(enemy.battle.get("motion",Vector2.ZERO))*0.25
 	var run: Dictionary = wing.get("run",{})
 	if run.get("target",-1) != enemy.id:
@@ -279,34 +290,37 @@ static func strafe(wing: Dictionary, enemy: Dictionary, berth: Vector2, bay: int
 	var axis: Vector2 = run.axis
 	var side: Vector2 = axis.orthogonal()*float(run.side)
 	var radius: float = Defenses.body_geometry(enemy).radius
-	var gate := maxf(reach*1.30, radius + float(wing.speed)*0.42 + 55.0)
-	var offset := minf(reach*0.48, radius*0.65+13.0+(bay%3)*6.0)
+	var separation := Vector2(wing.pos).distance_to(target)
+	var gate := maxf(reach*1.04,radius+30.0)
+	var offset := clampf(radius*0.45 + (bay%3)*4.0,11.0,reach*0.25)
 	match run.phase:
 		"flank":
 			var entry := target + axis*gate
-			steer(wing,entry,delta)
-			if Vector2(wing.pos).distance_to(entry) < maxf(35.0,wing.speed*0.28):
+			steer(wing,entry,delta,1.0 if separation>gate*1.6 else 0.70)
+			if Vector2(wing.pos).distance_to(entry)<maxf(30.0,wing.speed*0.18) or separation < gate*0.95:
 				run.phase = "strafe"
 		"strafe":
-			steer(wing,target+side*offset-axis*gate,delta)
-			if (Vector2(wing.pos)-target).dot(axis) < 0:
+			steer(wing,target+side*offset-axis*minf(28,reach*0.15),delta,0.77)
+			if separation<maxf(offset+12.0,radius*0.5) or (Vector2(wing.pos)-target).dot(axis)<0:
 				run.phase = "break"
-			return run.phase == "strafe"
 		"break":
-			var exit_point := target-axis*gate + side*(gate*0.65)
-			steer(wing,exit_point,delta)
-			if Vector2(wing.pos).distance_to(exit_point) < maxf(45.0,wing.speed*0.30):
+			var turn_radius := maxf(radius+12.0,reach*0.72)
+			var exit_point := target+side*turn_radius-axis*minf(30.0,reach*0.2)
+			steer(wing,exit_point,delta,0.60)
+			if Vector2(wing.pos).distance_to(exit_point)<maxf(24.0,wing.speed*0.12) or separation>gate*1.12:
 				run.passes += 1
 				run.side = -float(run.side)
-				run.phase = "rally"
+				run.axis = target.direction_to(wing.pos)
+				run.phase = "rally" if int(run.passes)%3==0 else "strafe"
+				run.rally_time = 0.0
 		"rally":
 			var homeward := target.direction_to(berth)
-			var rendezvous := target+homeward*(gate+90.0)+homeward.orthogonal()*((int(wing.bay)%3-1)*70.0)
-			steer(wing,rendezvous,delta)
-			if Vector2(wing.pos).distance_to(rendezvous) < maxf(52.0,wing.speed*0.34):
-				run.axis = target.direction_to(wing.pos).rotated(float(run.side)*(0.35+0.10*(int(wing.index)%4)))
-				run.phase = "flank"
-	return false
+			var rendezvous := target+homeward*gate*0.85+homeward.orthogonal()*((int(wing.bay)%3-1)*reach*0.24)
+			run.rally_time = float(run.get("rally_time",0))+delta
+			steer(wing,rendezvous,delta,0.65)
+			if Vector2(wing.pos).distance_to(rendezvous)<45.0 or run.rally_time>=0.85:
+				run.axis = target.direction_to(wing.pos)
+				run.phase = "strafe"
 
 static func intercept(world, carrier: Dictionary, wing: Dictionary, spec: Dictionary, multiplier: float, missiles: Variant, airborne: Variant) -> bool:
 	if wing.cool > 0.0 or not spec.has("pd"):
@@ -330,11 +344,10 @@ static func attack(world, carrier: Dictionary, enemy: Dictionary, wing: Dictiona
 	var cycle: int = wing.get("cycle",0)
 	var weapon: Dictionary = {} if shots.is_empty() else shots[cycle % shots.size()]
 	var reach := float(weapon.get("range",120.0))
-	var on_run := true
 	if wing.role == "support":
 		fly(wing,berth+berth.direction_to(goal)*53.0,delta)
 	else:
-		on_run = strafe(wing,enemy,berth,bay,reach,delta)
+		strafe(wing,enemy,berth,bay,reach,delta)
 	if wing.cool > 0.0 or weapon.is_empty():
 		return
 	if wing.scan_in <= 0.0:
@@ -350,7 +363,7 @@ static func attack(world, carrier: Dictionary, enemy: Dictionary, wing: Dictiona
 				return
 	var flight_time := minf(0.50,Vector2(wing.pos).distance_to(goal)/maxf(1.0,weapon.speed))
 	var aim: Vector2 = goal+Vector2(enemy.battle.get("motion",Vector2.ZERO))*flight_time
-	if not on_run or Vector2(wing.pos).distance_squared_to(goal) > reach*reach:
+	if Vector2(wing.pos).distance_squared_to(goal) > reach*reach:
 		return
 	if wing.role != "support" and Vector2.from_angle(wing.heading).dot(Vector2(wing.pos).direction_to(aim)) < 0.76:
 		return

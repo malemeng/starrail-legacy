@@ -748,24 +748,7 @@ func draw_station_weapons(gun: Dictionary, tactical: bool) -> void:
 	var pos := tactical_screen(gun.pos) if tactical else screen(gun.pos)
 	var scale_factor := tactical_scale() if tactical else zoom
 	var hull_transform := Transform2D(gun.heading,Vector2.ONE * scale_factor,0,pos)
-	var angles: Array = gun.battle.get("turret_angles",[])
-	var recoils: Array = gun.battle.get("recoil",[])
-	var disabled: Array = gun.battle.get("disabled_slots",[])
-	for slot in gun.fit.weapons.size():
-		var id: String = gun.fit.weapons[slot]
-		if id == "":
-			continue
-		var mount := Hulls.slot_spec(gun.kind,slot)
-		var style := WeaponArt.profile(id)
-		var angle := float(angles[slot]) if slot < angles.size() else deg_to_rad(float(mount.facing))
-		var recoil := float(recoils[slot]) if slot < recoils.size() else 0.0
-		var pose := WeaponArt.pose(mount,style,angle,recoil)
-		pose.origin += Battle.slot_offset(gun,slot) - Vector2(mount.offset)
-		pose = hull_transform * pose
-		var jammed: bool = slot < disabled.size() and float(disabled[slot])>0.0
-		WeaponArt.draw_mount(self,pose,style.family,WeaponArt.tint(jammed,recoil))
-		if recoil > 0.75 and not jammed:
-			draw_circle(pose*Vector2(7,0),1.9*recoil*scale_factor,Color("ffe8aa"))
+	WeaponArt.draw_station_mounts(self,gun,hull_transform)
 
 func draw_station_battery(gun: Dictionary, tactical: bool) -> void:
 	var pos := tactical_screen(gun.pos) if tactical else screen(gun.pos)
