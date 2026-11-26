@@ -45,6 +45,7 @@ func inheritance(w, actor: Dictionary, spouse: Dictionary, child_id: int = 0) ->
 	w.Politics.die(w,actor.id,false)
 	check(person.wallet==original+cash and actor.wallet==0 and person.shares.get(issuer,0)==shares and actor.shares.is_empty(),"cash and all corporate votes transfer to the beneficiary's real accounts")
 	check(w.StationEquity.cap_table(w,site).people.get(heir,0)==7 and not site.equity.people.has(actor.id) and site.owner==neighbour and w.ships[own].owner==heir and w.ships[charter].owner==0,"the private station stake and personally purchased ship pass along, preserving unrelated station and charter property")
+	check(w.active().ship==own and w.ride().get("id",0)==own,"the successor boards the inherited owned ship as flagship")
 	if child_id==0:
 		check(w.player==spouse.id and spouse.spouse==0 and not spouse.noble,"the widowed ordinary spouse continues as the active character")
 	else:

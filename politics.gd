@@ -341,6 +341,35 @@ static func find_regent(world, child_id: int) -> int:
 			return candidate
 	return world.random_person(child_data.flag, landing(world, child_data), child_data.house)
 
+static func _board_inherited_flagship(world, person_id: int, owner_id: int, preferred_ship_id: int = 0) -> void:
+	var person: Dictionary = world.people.get(person_id, {})
+	if person.is_empty():
+		return
+	var current_id := int(person.get("ship", 0))
+	if current_id != 0 and world.ships.has(current_id):
+		return
+	var chosen: Dictionary = {}
+	if preferred_ship_id != 0 and world.ships.has(preferred_ship_id):
+		var candidate: Dictionary = world.ships[preferred_ship_id]
+		if int(candidate.get("owner", 0)) == owner_id:
+			chosen = candidate
+	if chosen.is_empty():
+		for vessel in world.ships.values():
+			if int(vessel.get("owner", 0)) == owner_id:
+				if chosen.is_empty() or (int(vessel.get("captain", 0)) == 0 and int(chosen.get("captain", 0)) != 0):
+					chosen = vessel
+	if chosen.is_empty():
+		return
+	var prev_captain := int(chosen.get("captain", 0))
+	if prev_captain != 0 and prev_captain != person_id and world.people.has(prev_captain):
+		var other: Dictionary = world.people[prev_captain]
+		other.ship = 0
+		other.loc = int(chosen.get("dock", 0)) if int(chosen.get("dock", 0)) != 0 else landing(world, other)
+	Economy.clear_assignments(world, chosen)
+	chosen.captain = person_id
+	person.ship = int(chosen.id)
+	person.loc = int(chosen.get("dock", 0))
+
 static func die(world, person_id: int, save_first: bool = true) -> void:
 	world.DiplomaticTrade.release_for(world,person_id)
 	world.ShareExchange.release_for(world,person_id)
@@ -348,6 +377,7 @@ static func die(world, person_id: int, save_first: bool = true) -> void:
 	if not actor.alive:
 		return
 	var was_player: bool = person_id == world.player
+	var flagship_id := int(actor.ship)
 	var fallback := landing(world, actor)
 	if was_player and save_first and world.before_death.is_valid():
 		world.before_death.call()
@@ -409,6 +439,7 @@ static func die(world, person_id: int, save_first: bool = true) -> void:
 		world.regent = 0
 		world.player = main
 		world.event("现在扮演继承人 " + world.name_of(main))
+	_board_inherited_flagship(world, world.player, main, flagship_id)
 	var successor: Dictionary = world.active()
 	Society.offer(world, "on_succession")
 	if successor.loc == 0 and successor.ship == 0:
@@ -1348,11 +1379,14 @@ static func advance(world) -> void:
 						break
 	if world.regency != 0 and age(world, world.people[world.regency]) >= 18:
 		var controlled: Dictionary = world.ride()
-		if controlled.get("owner", 0) == world.regency and controlled.dock != 0:
-			world.people[world.regency].loc = controlled.dock
+		if controlled.get("owner", 0) == world.regency:
+			world.people[world.regency].loc = int(controlled.get("dock", 0))
 			world.people[world.regency].ship = controlled.id
 			controlled.captain = world.regency
 			world.people[world.regent].ship = 0
+			world.people[world.regent].loc = int(controlled.get("dock", 0)) if int(controlled.get("dock", 0)) != 0 else landing(world, world.people[world.regent])
+		else:
+			_board_inherited_flagship(world, world.regency, world.regency)
 		world.player = world.regency
 		world.regency = 0
 		world.regent = 0
