@@ -53,7 +53,10 @@ func check_dock_navigation(game) -> void:
 			check(list_position > 0 and list.scroll_vertical == list_position, "ship catalogue scrolls independently")
 			back = menu.get_child(0)
 		if section in ["yard", "market"]:
+			await create_timer(.32).timeout
 			game._notification(Node.NOTIFICATION_WM_GO_BACK_REQUEST)
+			game._notification(Node.NOTIFICATION_WM_GO_BACK_REQUEST)
+			check(game.find_children("*", "ConfirmationDialog", true, false).is_empty(), "duplicate Android Back keeps the berth open")
 		else:
 			back.pressed.emit()
 		await process_frame

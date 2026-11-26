@@ -117,6 +117,8 @@ var mobile_was_docked := false
 const MobileModelAgent = preload("res://scripts/services/mobile_model_agent.gd")
 var mobile_runner: MobileModelAgent
 var mobile_background := false
+var last_mobile_back_frame := -1
+var last_mobile_back_msec := -1000
 var arena_display_suspended := false
 var arena_refresh_requested := false
 
@@ -1956,6 +1958,13 @@ func _notification(what: int) -> void:
 		if not test_profile and not world.succession and not world.ride().get("locked",false):
 			save_game(AUTO,true)
 	elif what == NOTIFICATION_WM_GO_BACK_REQUEST:
+		# Android can deliver the same Back gesture twice across a screen change.
+		# Count from the end as rebuilding a dock page can take a frame on a slow device.
+		var frame := Engine.get_process_frames()
+		if frame == last_mobile_back_frame or Time.get_ticks_msec() - last_mobile_back_msec < 300:
+			return
+		last_mobile_back_frame = frame
+		last_mobile_back_msec = Time.get_ticks_msec()
 		var dialog := get_window().get_last_exclusive_window()
 		if dialog != null and dialog != get_window():
 			dialog.close_requested.emit()
@@ -1973,6 +1982,7 @@ func _notification(what: int) -> void:
 			get_tree().quit()
 		else:
 			show_title()
+		last_mobile_back_msec = Time.get_ticks_msec()
 
 func open_strategic_map(initial_mode: String = "strategic", enemy_flag: int = -1) -> void:
 	if not playing or world.succession:

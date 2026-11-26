@@ -203,7 +203,8 @@ def check_dock_scroll(directory):
             shell("input", "keyevent", 4)
         else:
             shell("input", "tap", back_x, nav_y)
-        wait_screen(directory, name + "-returned", lambda f: at_port(f) and dock_button(f, 0) and not dock_button(f, index))
+        returned = wait_screen(directory, name + "-returned", lambda f: at_port(f) and dock_button(f, 0) and not dock_button(f, index))
+        assert not report_visible(returned), f"One Back gesture unexpectedly opened a second dialog after {name}"
     print("Shipyard and refit details scrolled; Android Back and the fixed berth button both returned to port", flush=True)
 
 
