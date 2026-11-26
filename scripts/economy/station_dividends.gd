@@ -2,8 +2,8 @@ extends RefCounted
 
 const Industry = preload("res://scripts/economy/industry.gd")
 
-static func can_manage(world, station: Dictionary) -> bool:
-	return world.oversees(station.get("manager",0)) or world.oversees(station.owner) or world.oversees(world.firms.get(station.firm,{}).get("director",0))
+static func can_manage(world, station: Dictionary, actor_id: int = 0) -> bool:
+	return world.oversees(station.get("manager",0), actor_id) or world.oversees(station.owner, actor_id) or world.oversees(world.firms.get(station.firm,{}).get("director",0), actor_id)
 
 static func terms(world, account: Dictionary, available: int, eligible: bool) -> Dictionary:
 	var config: Dictionary = Industry.RULES.dividends

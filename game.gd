@@ -401,12 +401,17 @@ func open_cheat_console() -> void:
 	if cli_agent_mode or not playing:
 		return
 	var dialog := AcceptDialog.new()
-	dialog.title = "作弊码 / 调试控制台 (F12)"
+	dialog.title = "作弊控制台" if mobile_play else "作弊控制台（F12）"
 	dialog.ok_button_text = "关闭"
+	dialog.get_ok_button().custom_minimum_size = Vector2(100,44)
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(540,315)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	dialog.add_child(scroll)
 	var box := VBoxContainer.new()
-	box.custom_minimum_size = Vector2(540, 320)
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	box.add_theme_constant_override("separation", 8)
-	dialog.add_child(box)
+	scroll.add_child(box)
 	var input_row := HBoxContainer.new()
 	box.add_child(input_row)
 	var code_input := LineEdit.new()
@@ -437,14 +442,16 @@ func open_cheat_console() -> void:
 		["当前站+500人口", "pop 500"], ["当前站+200物资", "goods 200"], ["一键竣工", "build"], ["送战列舰", "ship 7"],
 		["全局停战", "peace"], ["触发战争", "war"], ["刷新赏金", "bounty"], ["快进30天", "day 30"]
 	]:
-		button(quick, pair[0], func(): run_code.call(pair[1]), true, true)
+		var shortcut := button(quick, pair[0], func(): run_code.call(pair[1]), true, true)
+		shortcut.custom_minimum_size.y = 44
 	box.add_child(status)
 	button(box,"舰船运行诊断",func(): dialog.queue_free(); hud.open_diagnostics())
 	dialog.confirmed.connect(dialog.queue_free)
 	dialog.close_requested.connect(dialog.queue_free)
 	add_child(dialog)
-	dialog.popup_centered()
-	code_input.grab_focus()
+	dialog.popup_centered_clamped(Vector2i(620,460),0.95)
+	if not mobile_play:
+		code_input.grab_focus()
 
 func open_arena_dialog() -> void:
 	if cli_agent_mode or not playing or arena == null:
@@ -592,22 +599,23 @@ func apply_cheat(raw: String) -> String:
 				on = parts[1].to_lower() in ["1", "on", "true"]
 			world.campaign["cheat_mode"] = on
 			return "作弊模式已开启：人物右键菜单已解锁「切换为此角色」。" if on else "作弊模式已关闭。"
-		"money", "rich", "cash":
+		"money", "rich", "cash", "credits":
 			var amount := arg if arg != 0 else 100000
 			world.credit(world.player, amount, {}, "作弊码")
 			return "作弊码生效：信用点 %+d（当前 ¢%d）。" % [amount, actor.wallet]
 		"fuel":
 			var count := 0
 			for s: Dictionary in world.ships.values():
-				if world.can_operate(s):
+				if world.can_operate(s) or world.can_dispatch_service(s):
 					s.fuel = 100.0
 					count += 1
 			return "作弊码生效：已为 %d 艘己方舰船加满燃料。" % count
 		"repair", "heal":
 			var count := 0
 			for s: Dictionary in world.ships.values():
-				if world.oversees(s.owner):
+				if world.can_operate(s) or world.can_dispatch_service(s):
 					s.hp = int(world.Hulls.MODELS[s.kind].hp)
+					s.battle.armor = float(world.Hulls.COMBAT[s.kind].armor)
 					count += 1
 			return "作弊码生效：已修复 %d 艘己方舰船。" % count
 		"pop":
@@ -795,6 +803,9 @@ func run_bridge() -> void:
 	jump_button = button(toolbar, "跃迁 M", flight.change_layer)
 	chart_button = button(toolbar, "星图 C", toggle_system_chart)
 	button(toolbar, "战略地图", func(): open_strategic_map("strategic"))
+	if not cli_agent_mode:
+		var cheats := button(toolbar_flow, "作弊", open_cheat_console)
+		cheats.custom_minimum_size = Vector2(64,44)
 	status = title(toolbar_flow, "", 13, GOLD, true)
 	status.custom_minimum_size.x = 200
 	status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -951,6 +962,8 @@ func current_system() -> int:
 		return vessel.system
 	var actor: Dictionary = world.active()
 	var port_id: int = actor.get("journey", {}).get("origin", actor.get("loc", 0))
+	if world.ships.has(actor.get("transit_ship", 0)):
+		return world.ships[actor.transit_ship].system
 	return world.ports.get(port_id, {}).get("system", 0)
 
 func takeover_dir() -> String:
@@ -1149,6 +1162,7 @@ func _start_takeover(cfg: Dictionary) -> void:
 		say("未能启动本地托管会话。")
 		return
 	agent_bridge = bridge
+	bridge.allow_cheats = bridge.allow_cheats or bool(cfg.get("allow_cheats",false))
 	if not is_instance_valid(agent_overlay):
 		agent_overlay = CanvasLayer.new()
 		add_child(agent_overlay)
@@ -1251,6 +1265,11 @@ func _open_smolagents_dialog() -> void:
 	auto_cb.button_pressed = bool(cfg.auto_launch)
 	opt_row.add_child(auto_cb)
 	auto_cb.visible = not mobile_play
+	var cheat_cb := CheckButton.new()
+	cheat_cb.text = "允许 Agent 作弊"
+	cheat_cb.custom_minimum_size.y = 44
+	cheat_cb.button_pressed = bool(cfg.get("allow_cheats",false))
+	box.add_child(cheat_cb)
 	var instructions := "填写兼容 Chat Completions、支持工具调用的模型服务。局域网电脑模型请填电脑 IP（含 /v1）。启动后会向该服务发送游戏状态；点「托管: 开」即可停止。" if mobile_play else "点击启动后将在后台自动运行 HuggingFace smolagents 并接管操作，无需切换窗口；再次点击顶栏「托管: 开」即可随时收回控制权。"
 	title(box,instructions,12,DIM,true)
 	var profiles := _load_model_profiles()
@@ -1269,6 +1288,7 @@ func _open_smolagents_dialog() -> void:
 	var btn_row := hbox(box)
 	UIKit.action_button(btn_row, "保存模型配置", func():
 		var saved_cfg := {
+			"allow_cheats":cheat_cb.button_pressed,
 			"api_base": ep_in.text.strip_edges(),
 			"model": mod_in.text.strip_edges(),
 			"api_key": key_in.text.strip_edges(),
@@ -1281,6 +1301,7 @@ func _open_smolagents_dialog() -> void:
 		say("已保存模型配置与预设：" + str(saved_cfg.model)), "ghost")
 	UIKit.action_button(btn_row, "启动全流程托管", func():
 		var next_cfg := {
+			"allow_cheats":cheat_cb.button_pressed,
 			"api_base": ep_in.text.strip_edges(),
 			"model": mod_in.text.strip_edges(),
 			"api_key": key_in.text.strip_edges(),
@@ -1675,6 +1696,8 @@ func update_header() -> void:
 	var hull := "未登舰"
 	if not vessel.is_empty():
 		hull = "#%d %s  船体 %d/%d  燃料 %d  余仓 %d" % [vessel.id, world.HULLS[vessel.kind], ceili(vessel.hp), world.HULL_HP[vessel.kind], floori(vessel.fuel), world.cargo_free(vessel)]
+	elif actor.has("transit_ship"):
+		hull = "乘坐客船 #%d · 前往%s" % [actor.transit_ship,world.ports.get(actor.get("travel_dest",0),{}).get("name","目的港")]
 	header.text = "%s  ·  %s (%s)  ·  ¢%s  ·  %s" % [world.date_label(), world.name_of(world.player), world.flag_name(actor.get("flag", -1)), actor.get("wallet", 0), hull]
 	var location: String = "超空间航行" if galaxy else world.systems[current_system()].name
 	var wp_txt := ("  ·  航点: " + waypoint_label) if waypoint_live and not waypoint_label.is_empty() else ""
@@ -1744,7 +1767,8 @@ func refresh() -> void:
 	var docked := dock_view.sync()
 	if mobile_play and docked != mobile_was_docked:
 		mobile_was_docked = docked
-		if side_collapsed == docked:
+		var show_panel: bool = docked or world.active().has("transit_ship")
+		if side_collapsed == show_panel:
 			toggle_side_panel()
 	if galaxy or world.succession:
 		system_chart = false

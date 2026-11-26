@@ -2,6 +2,9 @@ extends RefCounted
 
 const SILENT := ["observe","watch_frame","quit"]
 const LABELS := {
+	"assault_station":"进攻空间站",
+	"disembark":"离舰驻站","board_liner":"购票登船","disembark_liner":"客船下客","assign_passenger_liner":"开通客运班线",
+	"assign_contractor":"派遣工程舰","debug_ship":"查看舰船","hire_captain":"招募船长","assign_ship":"指派船长","wait":"等待","cheat":"执行作弊指令",
 	"new_game":"登记起航","dock":"靠港","depart":"解除系泊","jump":"跃迁","waypoint":"设定航点",
 	"freight_offer":"查看运输委托","accept_freight":"接运输委托","deliver_freight":"交付货物","market_quote":"查询整批货价",
 	"accept_first_job":"接下首航委托","deliver_first_job":"交付首航委托","claim_return_bonus":"领取返航津贴",
@@ -130,6 +133,36 @@ func receipt(action: String, response: Dictionary) -> String:
 	var world = game.world
 	var ship: Dictionary = world.ride()
 	match action:
+		"assault_station":
+			return str(result.message)
+		"board_liner":
+			return "票款 ¢%d · 前往%s · %s" % [result.fare, port_label(result.dest), ship_label(result.ship)]
+		"disembark","disembark_liner":
+			return "已从%s下船 · %s" % [ship_label(result.ship), port_label(result.port)]
+		"assign_passenger_liner":
+			var stops := PackedStringArray()
+			for port in result.route:
+				stops.append(port_label(port))
+			return "%s · %s" % [ship_label(result.ship), " → ".join(stops)]
+		"assign_contractor":
+			return "%s · 母港%s · 已开始承接工程" % [ship_label(result.ship), port_label(result.home_port)]
+		"debug_ship":
+			return "%s · %s" % [ship_label(result.ship), result.status]
+		"hire_captain":
+			return "%s · 船长%s" % [ship_label(result.ship), world.name_of(result.captain)]
+		"wait":
+			if result.get("stopped","") == "disembarked":
+				return "%s已在%s下客" % [ship_label(result.ship), port_label(result.port)]
+			return "已推进 %d 天" % result.days_elapsed
+		"cheat":
+			match result.kind:
+				"credits": return "信用点余额 ¢%d" % result.credits
+				"fuel": return "燃料已加至 %d" % result.fuel
+				"repair": return "已修复 %d 艘舰船" % result.repaired
+				"trust": return "阵营信任变为 %d" % result.score
+				"opinion": return "人物好感变为 %d" % result.opinion
+				"tick": return "已推进至第 %d 天" % result.day
+				"reveal": return "已揭示 %d 个星系" % result.systems
 		"step":
 			return STOPS.get(result.get("stopped",""),"本段指令结束")
 		"trade":
@@ -161,3 +194,10 @@ func receipt(action: String, response: Dictionary) -> String:
 	if result.get("accepted",true) == false or result.get("ok",true) == false or result.get("cancelled",true) == false:
 		return "请求未获接受"
 	return "已收到回执"
+
+func port_label(id: int) -> String:
+	return str(game.world.ports.get(id, {}).get("name", "#%d" % id))
+
+func ship_label(id: int) -> String:
+	var vessel: Dictionary = game.world.ships.get(id, {})
+	return "#%d %s" % [id, game.world.HULLS[vessel.kind]] if not vessel.is_empty() else "#%d" % id

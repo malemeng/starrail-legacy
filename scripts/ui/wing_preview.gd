@@ -50,8 +50,12 @@ func _draw() -> void:
 		"count": count,
 		"heading": 0.0,
 	}
-	WingVisuals.formation(pseudo_wing, 0.0, tone, func(a: Vector2, b: Vector2, width: float, col: Color):
-		draw_line(center + a * scale_factor, center + b * scale_factor, col, maxf(1.6, width * 1.15), true))
+	var sprite := WingVisuals.sprite_for(role)
+	var preview_scale := minf(scale_factor, (size.y-36.0)/(14.0*maxi(2,count)))
+	for i in count:
+		var at := center + WingVisuals.Wings.craft_position(pseudo_wing,0.0,i)*preview_scale
+		var dimensions := sprite.get_size()*preview_scale
+		draw_texture_rect(sprite,Rect2(at-dimensions*0.5,dimensions),false,Color.WHITE.lerp(tone,0.25))
 
 	var font := get_theme_default_font()
 	var label: String = ROLE_LABELS.get(role, "舰载联队")

@@ -27,5 +27,5 @@ void fragment() {
 	float center = 1.0 - smoothstep(0.0, 0.30, distance_from_hit);
 	float flash = shield.z * (wave + center * 0.65);
 	float alpha = clamp((edge * 0.56 * stress + flash) * end_fade, 0.0, 1.0);
-	COLOR = vec4(mix(tint.rgb, vec3(0.89, 0.98, 1.0), clamp(flash, 0.0, 1.0)), alpha);
+	COLOR = vec4(mix(tint.rgb, vec3(0.89, 0.98, 1.0), clamp(flash, 0.0, 1.0)), alpha * tint.a);
 }

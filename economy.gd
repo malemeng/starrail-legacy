@@ -186,6 +186,8 @@ static func crew(world, amount: int) -> int:
 static func market_open(world, visitor: Dictionary, station: Dictionary) -> bool:
 	if station.get("coalition_blockade",false) or station.get("landing_only",false):
 		return false
+	if int(station.get("firm",0)) > 0 and world.CompanyWars.ships_hostile(world,world.ships.get(visitor.get("ship",0),visitor),station):
+		return false
 	if visitor.flag < 0 or station.firm == 0:
 		return true
 	return world.firms.get(station.firm, {}).get("embargo", -1) != visitor.flag and not world.CompanyWars.at_war(world,station.firm,visitor.flag)
@@ -693,9 +695,11 @@ static func assign(world, ship_id: int, person_id: int, kind: String, source: in
 
 static func hire_remote_captain(world, ship_id: int, kind: String = "停泊待命", home_port: int = 0) -> bool:
 	var vessel: Dictionary = world.ships.get(ship_id, {})
-	if vessel.is_empty() or not world.oversees(world.ship_principal(vessel)) or vessel.captain != 0:
+	if vessel.is_empty() or not world.can_dispatch_service(vessel) or vessel.captain != 0:
 		return false
-	if player_funds(world,vessel) < 85:
+	var station: Dictionary = world.ports.get(vessel.get("station_owner",0), {})
+	var budget: int = player_funds(world,vessel) if station.is_empty() else world.Treasury.available(station)
+	if budget < 85:
 		return false
 	if kind in ["站属贸易","站属采矿"]:
 		var home: Dictionary = world.ports.get(home_port,{})
@@ -706,7 +710,10 @@ static func hire_remote_captain(world, ship_id: int, kind: String = "停泊待�
 	officer.employer = vessel.owner
 	officer.ship = ship_id
 	officer.loc = vessel.dock
-	player_pay(world,vessel,-85,"船长招募")
+	if station.is_empty():
+		player_pay(world,vessel,-85,"船长招募")
+	else:
+		world.Treasury.post(world,station,-85,"船长招募")
 	world.credit(officer_id, 85)
 	vessel.captain = officer_id
 	if vessel.get("order_queue", []).is_empty():
@@ -767,7 +774,7 @@ static func buy_and_assign_to_station(world, port_id: int, kind: int, duty_kind:
 		return 0
 	if not world.oversees(station.owner) and not world.oversees(station.get("manager", 0)) and not world.Dividends.can_manage(world, station):
 		return 0
-	if station.hulls[kind] <= 0 or not Hulls.model_limit(station, kind):
+	if kind < 0 or kind >= station.hulls.size() or station.hulls[kind] <= 0 or not Hulls.model_limit(station, kind):
 		return 0
 	var quote := ship_quote(station, kind)
 	if world.active().wallet < int(quote.price) + 55:
@@ -1200,6 +1207,8 @@ static func pay_maintenance(world, vessel: Dictionary) -> void:
 
 static func operating_port(world, vessel: Dictionary) -> Dictionary:
 	var job: Dictionary = vessel.get("job",{})
+	if vessel.has("station_owner") and job.get("kind","") in ["客运","工程承包"]:
+		return world.ports.get(vessel.station_owner, {})
 	if job.get("kind","") not in ["站属贸易","站属采矿"]:
 		return {}
 	var station: Dictionary = world.ports.get(job.get("home_port",0),{})
@@ -2711,27 +2720,30 @@ static func refit_quote(world, port_id: int, slot_index: int, weapon_key: String
 		return {"ok":false, "reason":"舰船未停靠在本站"}
 	if not world.can_operate(vessel) or (black and not world.is_regular(station)) or (not black and not allowed(world, vessel, station)):
 		return {"ok":false, "reason":"当前无权使用此武器库"}
-	if slot_index not in range(vessel.fit.weapons.size()) or (weapon_key != "" and not Hulls.WEAPONS.has(weapon_key)):
+	return weapon_refit_quote(world,station,vessel.kind,vessel.fit,slot_index,weapon_key,black,player_funds(world,vessel))
+
+static func weapon_refit_quote(world, station: Dictionary, kind: int, fit: Hulls.Fitting, slot_index: int, weapon_key: String, black: bool, funds: int) -> Dictionary:
+	if slot_index not in range(fit.weapons.size()) or (weapon_key != "" and not Hulls.WEAPONS.has(weapon_key)):
 		return {"ok":false, "reason":"无此挂点或武器"}
-	var old_key: String = vessel.fit.weapons[slot_index]
-	var budget: int = Hulls.COMBAT[vessel.kind].op
+	var old_key: String = fit.weapons[slot_index]
+	var budget: int = Hulls.COMBAT[kind].op
 	var change := int(Hulls.WEAPONS.get(weapon_key,{}).get("op",0)) - int(Hulls.WEAPONS.get(old_key,{}).get("op",0))
-	var used := Hulls.fitting_cost(vessel.kind, vessel.fit) + change
+	var used := Hulls.fitting_cost(kind, fit) + change
 	var price := weapon_price(weapon_key,true,black,station) - weapon_price(old_key,false,false,station)
 	var quote := {"ok":false, "reason":"", "current":old_key, "weapon":weapon_key, "net":price,
 		"op_delta":change, "used_op":used, "free_op":budget-used}
 	if old_key == weapon_key:
 		quote.net = 0
 		quote.reason = "已安装"
-	elif Hulls.slot_spec(vessel.kind,slot_index).builtin:
+	elif Hulls.slot_spec(kind,slot_index).builtin:
 		quote.reason = "内置武器固定在舰体上"
-	elif not Hulls.weapon_compatible(vessel.kind,slot_index,weapon_key):
+	elif not Hulls.weapon_compatible(kind,slot_index,weapon_key):
 		quote.reason = "挂点类型或尺寸不兼容"
 	elif weapon_key != "" and weapon_key not in station_weapons(world,station,black):
 		quote.reason = "此渠道未出售该武器"
 	elif used > budget:
 		quote.reason = "装配点不足"
-	elif price > 0 and player_funds(world,vessel) < price:
+	elif price > 0 and funds < price:
 		quote.reason = "信用点不足"
 	elif -price > (int(station.get("black_treasury", 0)) if black else world.Treasury.available(station)):
 		quote.reason = "黑市回购资金不足" if black else "本站回购预算不足"
@@ -2962,11 +2974,11 @@ static func docked_liners(world, port_id: int) -> Array[Dictionary]:
 
 static func assign_passenger_liner(world, ship_id: int, custom_route: Array = [], actor_id: int = 0) -> Dictionary:
 	var vessel: Dictionary = world.ships.get(ship_id, {})
-	if vessel.is_empty() or not world.oversees(world.ship_principal(vessel), actor_id):
+	if vessel.is_empty() or not world.can_dispatch_service(vessel, actor_id):
 		return {"ok": false, "reason": "无权调度该舰船。"}
 	if int(vessel.captain) in [0, world.player]:
 		return {"ok": false, "reason": "需先雇佣 NPC 代理人船长执掌该客船。"}
-	var hub := int(vessel.dock) if int(vessel.dock) != 0 and world.ports.has(int(vessel.dock)) else int(world.systems[0].ports[0])
+	var hub := int(vessel.dock) if world.ports.has(vessel.dock) else int(vessel.get("station_owner", world.systems[0].ports[0]))
 	var route: Array[int] = []
 	if not custom_route.is_empty():
 		for pid in custom_route:
@@ -2978,6 +2990,9 @@ static func assign_passenger_liner(world, ship_id: int, custom_route: Array = []
 		route = build_passenger_route(world, hub, vessel.flag)
 	if route.size() < 2:
 		return {"ok": false, "reason": "至少需要 2 座友好营业港口才能开通客运班线。"}
+	for pid in vessel.get("passengers", []):
+		if int(world.people.get(pid, {}).get("travel_dest", 0)) not in route:
+			return {"ok": false, "reason": "新航线须经停在船乘客的目的港。"}
 	if vessel.get("order_queue", []).is_empty():
 		release_reservation(world, vessel)
 		vessel.travel = {}
@@ -3087,7 +3102,11 @@ static func step_passenger_ship(world, vessel: Dictionary) -> void:
 	if route.size() < 2 and world.ports.has(hub_id):
 		route = build_passenger_route(world, hub_id, vessel.flag)
 	job.route = route
-	if route.size() < 2 or int(vessel.dock) == 0:
+	if route.size() < 2:
+		return
+	if int(vessel.dock) == 0:
+		if vessel.travel.is_empty():
+			begin_trip(world, vessel, world.ports[route[0]])
 		return
 	var cur_port_id := int(vessel.dock)
 	var cur_port: Dictionary = world.ports.get(cur_port_id, {})

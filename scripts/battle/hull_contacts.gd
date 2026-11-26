@@ -25,7 +25,7 @@ static func parts(kind: int) -> Array:
 	return geometry.solids
 
 static func solid(ship: Dictionary, system: int) -> bool:
-	return Battle.available(ship,system) and not Battle.phased(ship)
+	return not ship.has("defense_port") and Battle.available(ship,system) and not Battle.phased(ship)
 
 static func capture(world, system: int) -> Dictionary:
 	var previous := {}

@@ -56,9 +56,71 @@ static func active_wars_for_firm(world, firm_id: int) -> Array:
 	ensure_state(world)
 	var list: Array = []
 	for war in world.campaign.company_wars.values():
-		if int(war.get("firm_id", 0)) == firm_id:
+		if int(war.get("firm_id", 0)) == firm_id or (war.get("opponent_kind","") == "company" and war.opponent == firm_id):
 			list.append(war)
 	return list
+
+## An armed attack on an independent operator is a casus belli in its own right.
+## Unaligned captains and companies have separate identities even under the same neutral flag.
+static func asset_incident(world, firm_id: int, ship: Dictionary, actor: Dictionary, employer_flag: int) -> String:
+	if not is_pure_company(world,firm_id):
+		return ""
+	var other_firm := int(ship.get("firm",0))
+	if other_firm == firm_id:
+		return ""
+	var kind := "faction" if employer_flag >= 0 else ("company" if other_firm > 0 else "person")
+	var other := employer_flag if kind == "faction" else (other_firm if kind == "company" else int(actor.id))
+	ensure_state(world)
+	var key := "asset:%d:%s:%d" % [firm_id,kind,other]
+	if kind == "faction":
+		key = _key(firm_id,other)
+	elif kind == "company":
+		key = "asset:%d:company:%d" % [mini(firm_id,other),maxi(firm_id,other)]
+	if world.campaign.company_wars.has(key):
+		return key
+	world.campaign.company_truces.erase(key)
+	var war := {"firm_id":firm_id,"opponent_kind":kind,"opponent":other,"started":world.day,"last_action":world.day,"seized":[]}
+	world.campaign.company_wars[key] = war
+	world.event("【企业资产战争】%s 的空间站遭到 %s 攻击，双方进入交战状态。" % [world.firms[firm_id].name,opponent_name(world,war)])
+	return key
+
+static func opponent_name(world, war: Dictionary) -> String:
+	match war.opponent_kind:
+		"company": return world.firms.get(war.opponent,{}).get("name","已解散企业")
+		"person": return world.name_of(war.opponent)
+	return world.flag_name(war.opponent)
+
+static func can_end_asset_war(world, war: Dictionary) -> bool:
+	if world.oversees(world.firms.get(war.firm_id,{}).get("director",0)):
+		return true
+	match war.opponent_kind:
+		"company": return world.oversees(world.firms.get(war.opponent,{}).get("director",0))
+		"person": return world.oversees(war.opponent)
+	return world.Society.player_governs(world,war.opponent)
+
+static func end_asset_war(world, key: String) -> bool:
+	var war: Dictionary = world.campaign.get("company_wars",{}).get(key,{})
+	if not war.has("opponent_kind"):
+		return false
+	for site: Dictionary in world.ports.values():
+		if site.get("assault",{}).get("company_war","") == key:
+			world.StationAssault.clear(world,site)
+	world.campaign.company_wars.erase(key)
+	world.campaign.company_truces[key] = world.day + TRUCE_DAYS
+	world.event("【企业停战】%s 与 %s 结束资产战争。" % [world.firms[war.firm_id].name,opponent_name(world,war)])
+	return true
+
+static func company_of(world, unit: Dictionary) -> int:
+	if unit.has("defense_port") or unit.has("station_owner"):
+		var site: Dictionary = world.ports.get(unit.get("defense_port",unit.get("station_owner",0)),{})
+		return int(site.get("assault",{}).get("firm",site.get("firm",0))) if unit.has("defense_port") else int(site.get("firm",0))
+	return int(unit.get("firm",unit.get("privateer_firm",0)))
+
+static func represents(world, unit: Dictionary, kind: String, id: int) -> bool:
+	match kind:
+		"company": return company_of(world,unit) == id
+		"faction": return int(unit.get("flag",world.NEUTRAL)) == id
+	return int(unit.get("captain",0)) == id or int(unit.get("owner",0)) == id or int(unit.get("id",0)) == id or int(unit.get("charter",{}).get("operator",0)) == id
 
 static func get_pretext(world, firm_id: int, target_flag: int) -> Dictionary:
 	ensure_state(world)
@@ -191,6 +253,8 @@ static func sign_peace(world, firm_id: int, target_flag: int, winner: String = "
 	if not world.campaign.company_wars.has(k):
 		return {"ok": false, "reason": "双方未处于公司交战状态。"}
 	var war: Dictionary = world.campaign.company_wars[k]
+	if war.has("opponent_kind"):
+		return {"ok":end_asset_war(world,k),"reparations":0,"war":war}
 	world.campaign.company_wars.erase(k)
 	world.campaign.company_truces[k] = int(world.day) + TRUCE_DAYS
 	var firm: Dictionary = world.firms.get(firm_id, {})
@@ -230,8 +294,13 @@ static func ships_hostile(world, source: Dictionary, target: Dictionary) -> bool
 		return false
 	var t_flag := int(target.get("flag", world.NEUTRAL))
 	var s_flag := int(source.get("flag", world.NEUTRAL))
-	var s_firm := int(source.get("firm",source.get("privateer_firm",0)))
-	var t_firm := int(target.get("firm",target.get("privateer_firm",0)))
+	var s_firm := company_of(world,source)
+	var t_firm := company_of(world,target)
+	if s_firm == 0 and t_firm == 0:
+		return false
+	for war: Dictionary in world.campaign.company_wars.values():
+		if war.has("opponent_kind") and ((s_firm == war.firm_id and represents(world,target,war.opponent_kind,war.opponent)) or (t_firm == war.firm_id and represents(world,source,war.opponent_kind,war.opponent))):
+			return true
 	return (t_flag >= 0 and s_firm > 0 and at_war(world,s_firm,t_flag)) or (s_flag >= 0 and t_firm > 0 and at_war(world,t_firm,s_flag))
 
 static func _pick_raider_target(world, target_flag: int, hq_system: int) -> Dictionary:
@@ -306,6 +375,10 @@ static func _advance_wars(world) -> void:
 	var acted := {}
 	for k in world.campaign.company_wars.keys():
 		var war: Dictionary = world.campaign.company_wars[k]
+		if war.has("opponent_kind"):
+			if world.day - int(war.last_action) >= TRUCE_DAYS:
+				end_asset_war(world,k)
+			continue
 		var fid := int(war.get("firm_id", 0))
 		var tflag := int(war.get("target_flag", -1))
 		if not is_pure_company(world, fid) or not world.factions.get(tflag, {}).get("alive", false):

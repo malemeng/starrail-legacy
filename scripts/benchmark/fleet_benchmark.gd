@@ -234,7 +234,8 @@ func run(game) -> void:
 				game.canvas.sync_battlefield(system_id)
 				stages[0] += Time.get_ticks_usec() - start
 				start = Time.get_ticks_usec()
-				game.canvas.fleet_batch.sync(game.canvas.visuals,world.projectiles,game.canvas.particles,system_id,game.canvas.visible_wings)
+				game.canvas.fleet_batch.sync(game.canvas.visuals,world.projectiles,game.canvas.particles,system_id)
+				game.canvas.air_groups.sync(game.canvas.visible_wings)
 				stages[1] += Time.get_ticks_usec() - start
 			print("RENDER_STAGES_US_10X view_including_strokes strokes ",stages)
 			game.canvas.set_process(false)

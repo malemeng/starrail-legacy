@@ -312,6 +312,8 @@ def wait_days(days: int = 5) -> str:
 def raw_action(action: str, args_json: str = "{}") -> str:
     """调用 agent_bridge 支持的底层指令。常用指令：equity_catalog({})、buy_shares({"company_id":id,"shares":n})、sell_shares({"company_id":id,"shares":n})、ship_quote({"port_id":pid,"hull_id":hid})（hull_id见observe().state.shipyard）、station_expand({"port_id":pid})、dock({})。禁止猜测 help、port_catalog 或 scan_system。
 
+    靠港后 disembark 离开旗舰。用 board_liner 传 ship、dest、fare 买票，wait 等待到站，或用 disembark_liner 在停靠时下船。按 state.fleet 的 ID 用 hire_captain 招募船长，用 assign_passenger_liner 派客船，用 assign_contractor 派工程舰。仅在 state.allow_cheats 为真时可用 cheat，如 {"kind":"credits","amount":1000}。
+
     Args:
         action: 动作名称
         args_json: JSON 对象字符串

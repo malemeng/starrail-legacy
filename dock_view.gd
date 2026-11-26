@@ -399,6 +399,8 @@ func sidebar(body: Node, station: Dictionary) -> void:
 		UIKit.action_button(nav_row, "货栈", func(): mode = "market"; game.refresh(), "ghost", true, "", true)
 		UIKit.action_button(nav_row, "船坞", func(): mode = "yard"; game.refresh(), "ghost", true, "", true)
 		UIKit.action_button(nav_row, "改装", func(): mode = "refit"; game.refresh(), "ghost", true, "", true)
+		if station.build == 0 and not station.get("landing_only",false):
+			UIKit.action_button(nav_row,"模块武备",func(): preload("res://scripts/ui/station_armory.gd").open(game,station),"ghost")
 		UIKit.action_button(nav_row, game.key_caption("离港","E"), game.flight.dock, "default", not vessel.is_empty(), "未登舰", true)
 		if vessel.is_empty():
 			var liners: Array = Economy.docked_liners(world, station.id)

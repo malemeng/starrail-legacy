@@ -3,10 +3,11 @@ extends Node
 signal finished(message: String)
 
 const ACTIONS := ["market_quote","trade","navigate_to_station","step","wait","supply_fleet","ship_quote","buy_ship","set_default_behavior","assign_ship","debug_ship","incorporate_station","incorporate_ship","contribute_ship","freight_offer","accept_freight","deliver_freight","accept_first_job","deliver_first_job","claim_return_bonus","buyout_charter","set_intent","start_pretext","declare_company_war","sign_company_peace","board_liner","disembark_liner","assign_passenger_liner","assign_contractor"]
-const FLIGHT_ACTIONS := ["depart","dock","waypoint","jump","mine_or_salvage","repair","refuel","sensor_ping","attack_target","autopilot","order","group","system","field_repair","hire_builder","cancel_builder","deploy_station","donate_materials","found_planet_port"]
+const FLIGHT_ACTIONS := ["depart","dock","waypoint","jump","mine_or_salvage","repair","refuel","sensor_ping","attack_target","assault_station","autopilot","order","group","system","field_repair","hire_builder","cancel_builder","deploy_station","donate_materials","found_planet_port"]
 const PROMPT := "你正在操控《星轨遗产》的一名船长。根据目标和最新游戏状态选择工具。货物编号按 wares 的下标，舰船和港口编号从观测读取。通过 market_quote 和 trade 使用 ware、amount（正买负卖）。navigate_to_station 使用 port_id、auto_dock；step 使用 ticks(1-1800)、speed(1-5)、stop(arrival)。wait 使用 days(1-180)。先核实成交和靠港结果，再作下一步。可以连续调用工具；目标达成时用简短中文总结结束托管。"
 
 const MAX_TEXT_RETRIES := 2
+const PORT_ACTIONS := ["disembark","pilot_ship","hire_captain","buy_station_ship","station_armament","refit_station_module"]
 
 var bridge
 var http := HTTPRequest.new()
@@ -55,14 +56,12 @@ func start(session, cfg: Dictionary, rivals: String = "") -> void:
 	if not rivals.is_empty():
 		objective += "\n"+rivals
 	objective += "\n先调用 observe 读取当前角色的实际状态。"
-	var allowed := ACTIONS.duplicate()
-	if bridge.bound_actor_id == 0:
-		allowed.append_array(FLIGHT_ACTIONS)
-	else:
+	objective += "\n靠港离开旗舰用 disembark。按 passenger_liners 的报价用 board_liner（ship、dest、fare）购票；passenger_trip 显示在途状态，wait 可等到下船。fleet 是舰队，contacts 是同港人员。debug_ship 查 ship；若自有船缺船长，可用 hire_captain（ship）。assign_passenger_liner（ship，可选 route 港口 ID 数组）和 assign_contractor（ship，可选 home_port）分别经营客运和派工程舰。玩家允许作弊时可用 cheat（kind 和可选 amount），例如 credits 加信用点。"
+	if bridge.bound_actor_id != 0:
 		objective += "\n你是竞技场角色。跨港请用 navigate_to_station，再用 wait 推进所需天数及 step 确认抵达。"
 	tools = [tool_spec("observe","查看当前船长、账户、舰船、港口和任务。"),
 		tool_spec("trade_opportunities","查看当前已发现航线的贸易机会。"),
-		tool_spec("game_action","执行一个游戏指令。args_json 是 JSON 对象字符串，例如 {\"ware\":0,\"amount\":1}。",{"action":{"type":"string","enum":allowed},"args_json":{"type":"string"}},["action","args_json"])]
+		tool_spec("game_action","执行一个游戏指令。args_json 是 JSON 对象字符串，例如 {\"ware\":0,\"amount\":1}。",{"action":{"type":"string","enum":allowed_actions()},"args_json":{"type":"string"}},["action","args_json"])]
 	http.timeout = 120.0
 	http.body_size_limit = 1048576
 	http.max_redirects = 3
@@ -103,7 +102,17 @@ func _process(_delta: float) -> void:
 	else:
 		ask_model()
 
+func allowed_actions() -> Array:
+	var allowed := ACTIONS.duplicate()
+	allowed.append_array(PORT_ACTIONS)
+	if bridge.bound_actor_id == 0:
+		allowed.append_array(FLIGHT_ACTIONS)
+	if bridge.allow_cheats:
+		allowed.append("cheat")
+	return allowed
+
 func ask_model() -> void:
+	tools[2].function.parameters.properties.action.enum = allowed_actions()
 	if not turn.is_empty():
 		history.append(turn)
 		turn = []
@@ -206,7 +215,10 @@ func run_tool(item: Dictionary) -> void:
 	if action == "game_action" and args is Dictionary:
 		action = str(args.get("action",""))
 		args = _parse_args_dict(args.get("args_json","{}"))
-		if action not in ACTIONS and not (bridge.bound_actor_id == 0 and action in FLIGHT_ACTIONS):
+		if action == "cheat" and not bridge.allow_cheats:
+			append_result({"ok":false,"error":"cheats_disabled_by_player"})
+			return
+		if action not in allowed_actions():
 			append_result({"ok":false,"error":"unknown_action"})
 			return
 	elif action not in ["observe","trade_opportunities"]:
@@ -250,15 +262,23 @@ static func compact_receipt(receipt: Dictionary) -> Dictionary:
 			compact[key] = receipt[key]
 	var state: Dictionary = receipt.get("state",{})
 	var view := {}
-	for key in ["day","screen","actor","system","targets","objective","notice","wares","waypoint","beacons","jump_allowed","contract","passenger_liners"]:
+	for key in ["day","screen","actor","system","targets","objective","notice","wares","waypoint","beacons","jump_allowed","contract","passenger_liners","passenger_trip","managed_ports","allow_cheats"]:
 		if state.has(key):
 			view[key] = state[key]
 	if view.has("system"):
 		view.system = {"id":view.system.id,"name":view.system.name}
 	view.ship = fields(state.get("ship",{}),["id","hull_id","model","owner","firm","pos","dock","hp","fuel","crew","cargo","free_cargo","locked","shield","group","autopilot"])
+	view.fleet = []
+	for ship: Dictionary in state.get("fleet",[]):
+		var item := fields(ship,["id","hull_id","model","captain","captain_name","owner","firm","station_owner","dock","system","engineering","can_dispatch","charter"])
+		item.job = fields(ship.get("job",{}),["kind","home_port","route","site","fee"])
+		view.fleet.append(item)
+	view.contacts = []
+	for person: Dictionary in state.get("contacts",[]):
+		view.contacts.append(fields(person,["id","name","roles","age","ship","employer"]))
 	view.ports = []
 	for port in state.get("ports",[]).slice(0,12):
-		view.ports.append(fields(port,["id","name","pos","hostile","construction_days","stock","buy","sell"]))
+		view.ports.append(fields(port,["id","name","pos","hostile","construction_days","stock","buy","sell","operator","occupied_from","defense_targets"]))
 	for key in ["targets","beacons"]:
 		if view.has(key):
 			view[key] = view[key].slice(0,12)

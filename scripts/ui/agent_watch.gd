@@ -56,15 +56,17 @@ func _ready() -> void:
 	header.add_child(indicator)
 	add_label(header,"Agent 观战",16,TEAL)
 	cheat_toggle = CheckButton.new()
-	cheat_toggle.text = "允许作弊"
+	cheat_toggle.text = "允许 Agent 作弊"
+	cheat_toggle.custom_minimum_size = Vector2(192, 48)
 	cheat_toggle.focus_mode = Control.FOCUS_NONE
 	cheat_toggle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	cheat_toggle.alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	cheat_toggle.add_theme_font_size_override("font_size", 12)
+	cheat_toggle.add_theme_font_size_override("font_size", 16)
 	cheat_toggle.add_theme_color_override("font_color", GOLD)
 	cheat_toggle.toggled.connect(func(on: bool):
 		if game != null and game.agent_bridge != null:
-			game.agent_bridge.allow_cheats = on)
+			game.agent_bridge.allow_cheats = on
+			_sync_cheat_toggle())
 	header.add_child(cheat_toggle)
 	_sync_cheat_toggle()
 	intent = add_label(body,"",15,INK)
@@ -75,8 +77,9 @@ func _ready() -> void:
 	action = detail(body,"动作",INK)
 	result = detail(body,"结果",INK)
 	result.clip_text = false
+	result.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
 	result.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	result.max_lines_visible = 2
+	result.max_lines_visible = 4
 	progress_text = add_label(body,"",15,TEAL)
 	progress_bar = ProgressBar.new()
 	progress_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -112,11 +115,15 @@ func _sync_cheat_toggle() -> void:
 	cheat_toggle.visible = has_bridge
 	cheat_toggle.mouse_filter = Control.MOUSE_FILTER_STOP if has_bridge else Control.MOUSE_FILTER_IGNORE
 	cheat_toggle.set_pressed_no_signal(has_bridge and bool(game.agent_bridge.allow_cheats))
+	cheat_toggle.text = "允许 Agent 作弊：开" if cheat_toggle.button_pressed else "允许 Agent 作弊：关"
 
 func bind_game(session) -> void:
 	game = session
 	_sync_cheat_toggle()
 	schedule_placement()
+
+func over_cheat_toggle(point: Vector2) -> bool:
+	return is_instance_valid(cheat_toggle) and cheat_toggle.is_visible_in_tree() and cheat_toggle.get_global_rect().has_point(point)
 
 func schedule_placement() -> void:
 	if not placement_pending:

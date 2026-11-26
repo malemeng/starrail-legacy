@@ -137,12 +137,14 @@ static func advance(world, ship: Dictionary) -> void:
 ## Player/company engineering ship operating as a B2B contractor with an employed agent captain.
 static func assign_contractor(world, ship_id: int, home_port: int = 0, actor_id: int = 0) -> Dictionary:
 	var vessel: Dictionary = world.ships.get(ship_id, {})
-	if vessel.is_empty() or not world.oversees(world.ship_principal(vessel), actor_id):
+	if vessel.is_empty() or not world.can_dispatch_service(vessel, actor_id):
 		return {"ok": false, "reason": "无权调度该工程舰。"}
 	if not Hulls.can_build_station(vessel.kind):
 		return {"ok": false, "reason": "仅工程巡洋舰（如龙门级）可执行外包施工。"}
 	if int(vessel.captain) in [0, world.player]:
 		return {"ok": false, "reason": "需先雇佣 NPC 代理人船长执掌该工程舰。"}
+	if not vessel.get("passengers", []).is_empty():
+		return {"ok": false, "reason": "请先将乘客送达，再改派工程任务。"}
 	if vessel.has("construction_contract") and vessel.construction_contract.get("status", "") in ["active", "working"]:
 		return {"ok": false, "reason": "该工程舰正处于其他施工合同中。"}
 	var home := home_port if world.ports.has(home_port) else (int(vessel.dock) if int(vessel.dock) != 0 else int(world.systems[0].ports[0]))
@@ -183,7 +185,9 @@ static func _settle_contractor_fee(world, vessel: Dictionary, site: Dictionary, 
 	if cap_id != 0 and world.people.has(cap_id):
 		world.credit(cap_id, wages)
 	var net := paid - wages
-	if vessel.has("firm") and world.firms.has(int(vessel.firm)):
+	if world.ports.has(vessel.get("station_owner", 0)):
+		world.Treasury.post(world, world.ports[vessel.station_owner], net, "工程承包收入", false)
+	elif vessel.has("firm") and world.firms.has(int(vessel.firm)):
 		var firm: Dictionary = world.firms[int(vessel.firm)]
 		firm.treasury = int(firm.treasury) + net
 		firm.revenue = int(firm.get("revenue", 0)) + net

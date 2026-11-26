@@ -6,6 +6,23 @@ const RESIDUAL := 0.05
 const MAX_REDUCTION := 0.85
 const EDGE_CELL := 14.0
 static var shapes: Dictionary = {}
+static var station_shapes: Dictionary = {}
+
+static func body_geometry(vessel: Dictionary) -> Dictionary:
+	if not vessel.has("module_size"):
+		return geometry(vessel.kind)
+	var size: Vector2 = vessel.module_size
+	var key := Vector3(size.x,size.y,float(vessel.get("module_art",-2)))
+	if not station_shapes.has(key):
+		var half := size * 0.5
+		var bounds: PackedVector2Array = vessel.get("module_outline",PackedVector2Array([-half,Vector2(half.x,-half.y),half,Vector2(-half.x,half.y)]))
+		var rect := Rect2(bounds[0],Vector2.ZERO)
+		for vertex in bounds:
+			rect = rect.expand(vertex)
+		var shape := build_geometry(bounds,rect.get_center(),[],0.0)
+		shape.collision_kind = -1 - station_shapes.size()
+		station_shapes[key] = shape
+	return station_shapes[key]
 
 static func geometry(kind: int) -> Dictionary:
 	if shapes.has(kind):
@@ -15,16 +32,20 @@ static func geometry(kind: int) -> Dictionary:
 	if points.size() < 3:
 		var r: float = Hulls.CLASS_RADIUS[model.size]
 		points = PackedVector2Array([Vector2(r, 0), Vector2(-r, -r * 0.55), Vector2(-0.7 * r, 0), Vector2(-r, r * 0.55)])
+	var center: Vector2 = model.get("shield_center", Vector2.ZERO)
+	shapes[kind] = build_geometry(points,center,model.get("modules",[]),float(model.get("shield_radius",0.0)))
+	return shapes[kind]
+
+static func build_geometry(points: PackedVector2Array, center: Vector2, modules: Array, explicit_shield: float) -> Dictionary:
 	var envelope := Rect2(points[0], Vector2.ZERO)
 	var radius := 0.0
-	var center: Vector2 = model.get("shield_center", Vector2.ZERO)
 	var shield_radius := 0.0
 	for point in points:
 		envelope = envelope.expand(point)
 		radius = maxf(radius, point.length())
 		shield_radius = maxf(shield_radius, center.distance_to(point))
 	var module_envelope := radius
-	for module in model.get("modules",[]):
+	for module in modules:
 		if module.get("offset") is Vector2:
 			module_envelope = maxf(module_envelope,Vector2(module.offset).length() + float(module.radius))
 	var edges := {}
@@ -47,10 +68,9 @@ static func geometry(kind: int) -> Dictionary:
 			var bin := Vector2i(x,y)
 			if not edges.has(bin) and Geometry2D.is_point_in_polygon((Vector2(bin)+Vector2(0.5,0.5))*EDGE_CELL,points):
 				interior[bin] = true
-	shield_radius = model.get("shield_radius",shield_radius+4.0)
-	shapes[kind] = {"bounds":points, "rect":envelope, "radius":radius, "module_radius":module_envelope,"shield_center":center,
+	shield_radius = explicit_shield if explicit_shield > 0.0 else shield_radius+4.0
+	return {"bounds":points, "rect":envelope, "radius":radius, "module_radius":module_envelope,"shield_center":center,
 		"shield_radius":shield_radius,"reach":maxf(module_envelope,shield_radius+center.length()),"edges":edges,"inside":interior}
-	return shapes[kind]
 
 static func grid_for(vessel: Dictionary) -> PackedFloat32Array:
 	var state: Dictionary = vessel.battle
@@ -64,7 +84,7 @@ static func grid_for(vessel: Dictionary) -> PackedFloat32Array:
 	return grid
 
 static func cell_at(vessel: Dictionary, point: Vector2) -> Vector2i:
-	var rect: Rect2 = geometry(vessel.kind).rect
+	var rect: Rect2 = body_geometry(vessel).rect
 	var local := (point - Vector2(vessel.pos)).rotated(-float(vessel.heading))
 	var uv := ((local - rect.position) / rect.size).clamp(Vector2.ZERO, Vector2(0.9999, 0.9999))
 	return Vector2i(uv * Vector2(GRID))
@@ -111,7 +131,7 @@ static func repair_armor(vessel: Dictionary, amount: float) -> void:
 	sync_armor(vessel.battle, grid)
 
 static func shield_world_center(vessel: Dictionary) -> Vector2:
-	return Vector2(vessel.pos) + Vector2(geometry(vessel.kind).shield_center).rotated(vessel.heading)
+	return Vector2(vessel.pos) + Vector2(body_geometry(vessel).shield_center).rotated(vessel.heading)
 
 static func covered(vessel: Dictionary, point: Vector2) -> bool:
 	if not vessel.battle.shield or float(vessel.battle.get("shield_arc_live", 0.0)) <= 0:
@@ -125,7 +145,7 @@ static func shield_contact(vessel: Dictionary, start: Vector2, finish: Vector2) 
 		return Vector2.INF
 	var center := shield_world_center(vessel)
 	var ray := finish - start
-	var radius: float = geometry(vessel.kind).shield_radius
+	var radius: float = body_geometry(vessel).shield_radius
 	var relative := start - center
 	var a := ray.length_squared()
 	var b := relative.dot(ray)
@@ -140,7 +160,7 @@ static func shield_contact(vessel: Dictionary, start: Vector2, finish: Vector2) 
 	return point if covered(vessel, point) else Vector2.INF
 
 static func hull_contact(vessel: Dictionary, start: Vector2, finish: Vector2) -> Vector2:
-	var shape := geometry(vessel.kind)
+	var shape := body_geometry(vessel)
 	var center: Vector2 = vessel.pos
 	var radius: float = shape.radius
 	if start.is_equal_approx(finish) or Geometry2D.get_closest_point_to_segment(center, start, finish).distance_squared_to(center) > radius * radius:

@@ -21,6 +21,8 @@ const Frontier = preload("res://frontier.gd")
 const Celestial = preload("res://celestial.gd")
 const PlanetPorts = preload("res://scripts/campaign/planet_ports.gd")
 const ConstructionContract = preload("res://scripts/campaign/construction_contract.gd")
+const StationAssault = preload("res://scripts/campaign/station_assault.gd")
+const StationArmament = preload("res://scripts/economy/station_armament.gd")
 const State = preload("res://scripts/models/world_state.gd")
 const Person = preload("res://scripts/models/person_data.gd")
 const Ship = preload("res://scripts/models/ship_data.gd")
@@ -463,6 +465,10 @@ func enemy(first: Dictionary, second: Dictionary) -> bool:
 		return true
 	var source: Dictionary = ships.get(first.ship, first) if first.has("ship") else first
 	var target: Dictionary = ships.get(second.ship, second) if second.has("ship") else second
+	if source.has("defense_port") and StationAssault.attacks(self,target,source):
+		return true
+	if target.has("defense_port") and StationAssault.attacks(self,source,target):
+		return true
 	if source.has("engaged_by") and int(source.engaged_by.get(target.get("id",0),-1)) >= day:
 		return true
 	if target.has("engaged_by") and int(target.engaged_by.get(source.get("id",0),-1)) >= day:
@@ -555,7 +561,18 @@ func active() -> Dictionary:
 func ride() -> Dictionary:
 	return ships.get(active().get("ship", 0), {})
 
+func passenger_trip(actor: Dictionary) -> Dictionary:
+	var carrier: Dictionary = ships.get(actor.get("transit_ship", 0), {})
+	if carrier.is_empty():
+		return {}
+	var dest := int(actor.get("travel_dest", 0))
+	return {"ship":carrier.id, "model":HULLS[carrier.kind], "system":carrier.system,
+		"in_hyperspace":carrier.layer, "dock":carrier.dock, "dock_name":ports.get(carrier.dock, {}).get("name",""),
+		"dest":dest, "dest_name":ports.get(dest, {}).get("name",""), "can_disembark":ports.has(carrier.dock)}
+
 func can_dock(vessel: Dictionary, station: Dictionary) -> bool:
+	if station.get("assault",{}).get("ship",-1) == vessel.get("id",0):
+		return false
 	if not Hulls.berth_fits(vessel,station):
 		return false
 	return station.build > 0 or not enemy(vessel, station)
@@ -918,6 +935,12 @@ func oversees(owner: int, actor_id: int = 0) -> bool:
 func ship_principal(vessel: Dictionary) -> int:
 	return firms.get(vessel.get("firm",0),{}).get("director",vessel.get("owner",0))
 
+func can_dispatch_service(vessel: Dictionary, actor_id: int = 0) -> bool:
+	if vessel.has("station_owner"):
+		var station: Dictionary = ports.get(vessel.station_owner, {})
+		return not station.is_empty() and Dividends.can_manage(self, station, actor_id)
+	return oversees(ship_principal(vessel), actor_id)
+
 func reports_to(person: Dictionary) -> int:
 	var vessel: Dictionary = ships.get(person.get("ship",0),{})
 	if vessel.has("firm") and vessel.captain == person.id:
@@ -1042,6 +1065,7 @@ func tick(days: int = 1, first_day_motion: Dictionary = {}) -> void:
 		Capital.audit(self)
 		Capital.daily(self)
 		Celestial.Orbits.advance(self)
+		StationAssault.daily(self)
 		Operations.daily(self)
 		Crises.daily(self,first_day_motion if step == 0 else {})
 		Economy.population_day(self,first_day_motion if step == 0 else {})
@@ -1066,6 +1090,9 @@ func tick(days: int = 1, first_day_motion: Dictionary = {}) -> void:
 
 func destruction(ship_id: int, killer: int = 0) -> void:
 	if not ships.has(ship_id):
+		return
+	if ships[ship_id].has("defense_port"):
+		StationAssault.disable(self,ships[ship_id])
 		return
 	DiplomaticTrade.release_for(self,0,ship_id)
 	var vessel: Dictionary = ships[ship_id]

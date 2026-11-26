@@ -175,7 +175,8 @@ static func tick(vessel: Dictionary, delta: float, world = null) -> void:
 		state.vulnerability_time = maxf(0.0,state.vulnerability_time-elapsed_vulnerability)
 	if state.shield:
 		state.shield_offset = rotate_toward(state.shield_offset, state.shield_target, deg_to_rad(float(model.get("shield_turn_rate", 150.0))) * delta)
-		state.shield_arc_live = move_toward(state.shield_arc_live, deg_to_rad(float(model.get("shield_arc", 150.0))), deg_to_rad(float(model.get("shield_unfold_rate", 420.0))) * delta)
+		var arc := TAU if vessel.has("defense_module") else deg_to_rad(float(model.get("shield_arc", 150.0)))
+		state.shield_arc_live = move_toward(state.shield_arc_live, arc, deg_to_rad(float(model.get("shield_unfold_rate", 420.0))) * delta)
 		state.soft_flux = minf(Hulls.capacity(vessel) - state.hard_flux, state.soft_flux + float(model.get("shield_upkeep", 0.0)) * delta)
 		if spec_active.get("effect","")=="gaze":
 			state.shield_offset=PI
@@ -359,14 +360,18 @@ static func system(world, vessel: Dictionary, direction: Vector2, aim_point: Vec
 	return true
 
 static func slot_position(vessel: Dictionary, index: int) -> Vector2:
+	return Vector2(vessel.pos) + slot_offset(vessel,index).rotated(vessel.heading)
+
+static func slot_offset(vessel: Dictionary, index: int) -> Vector2:
+	if vessel.has("mount_offsets"):
+		return vessel.mount_offsets[index]
 	var slot: Dictionary = Hulls.slot_spec(vessel.kind, index)
-	return Vector2(vessel.pos) + Vector2(slot.offset).rotated(vessel.heading)
+	return slot.offset
 
 static func can_aim(vessel: Dictionary, index: int, endpoint: Vector2, distance: float) -> bool:
 	var slot: Dictionary = Hulls.MODELS[vessel.kind].mounts[index]
 	var heading: float = vessel.heading
-	var offset: Vector2 = slot.offset
-	return within_arc(endpoint - (Vector2(vessel.pos) + offset.rotated(heading)),heading,slot,distance)
+	return within_arc(endpoint - slot_position(vessel,index),heading,slot,distance)
 
 static func within_arc(vector: Vector2, heading: float, mount: Dictionary, reach: float) -> bool:
 	return vector.length_squared() <= reach * reach and absf(angle_difference(heading + deg_to_rad(mount.facing), vector.angle())) <= deg_to_rad(mount.arc*.5) + .00001
@@ -399,7 +404,7 @@ static func _fire_slot_prepared(world, vessel: Dictionary, index: int, endpoint:
 		elif active.effect == "lidar":
 			return false
 	var mount: Dictionary = Hulls.MODELS[vessel.kind].mounts[index]
-	var point := Vector2(vessel.pos) + Vector2(mount.offset).rotated(vessel.heading)
+	var point := slot_position(vessel,index)
 	var range_factor: float = Abilities.profile(vessel).get("passive_range",1.0) if active.is_empty() else modifier.get("range",1.0)
 	var reach: float = spec.range * range_factor
 	if not within_arc(endpoint - point,vessel.heading,mount,reach):
@@ -452,7 +457,7 @@ static func train(vessel: Dictionary, endpoint: Vector2, delta: float) -> void:
 	var weapons: Array = vessel.fit.weapons
 	var heading: float = vessel.heading
 	var local_target := (endpoint - Vector2(vessel.pos)).rotated(-heading)
-	if fire_control != null:
+	if fire_control != null and not vessel.has("module_size"):
 		if not turret_geometry.has(vessel.kind):
 			var layout := PackedVector4Array()
 			for mount: Dictionary in mounts:
@@ -463,7 +468,7 @@ static func train(vessel: Dictionary, endpoint: Vector2, delta: float) -> void:
 	for i in vessel.fit.weapons.size():
 		var slot: Dictionary = mounts[i]
 		var neutral := deg_to_rad(float(slot.facing))
-		var aim := (local_target - Vector2(slot.offset)).angle()
+		var aim := (local_target - slot_offset(vessel,i)).angle()
 		var half_arc := deg_to_rad(float(slot.arc)) * 0.5
 		var dest := neutral + clampf(angle_difference(neutral, aim), -half_arc, half_arc)
 		var weapon: Dictionary = Hulls.WEAPONS.get(weapons[i], {})
@@ -612,14 +617,15 @@ static func prepare_collision(world, system_id: int) -> bool:
 	collision_engine.clear_bodies()
 	for ship: Dictionary in world.ships.values():
 		if available(ship, system_id) and not phased(ship):
-			if not collision_models.has(ship.kind) or not is_same(collision_shapes[ship.kind],Defenses.shapes.get(ship.kind)):
-				var shape := Defenses.geometry(ship.kind)
-				var parts: Array = Hulls.MODELS[ship.kind].get("modules",[])
+			var shape := Defenses.body_geometry(ship)
+			var key := int(shape.get("collision_kind",ship.kind))
+			if not is_same(collision_shapes.get(key),shape):
+				var parts: Array = [] if ship.has("module_size") else Hulls.MODELS[ship.kind].get("modules",[])
 				if parts.size() > 63:
 					return false
-				collision_engine.define_hull(ship.kind,shape.bounds,parts,shape.module_radius,shape.shield_center,shape.shield_radius)
-				collision_models[ship.kind] = parts
-				collision_shapes[ship.kind] = shape
+				collision_engine.define_hull(key,shape.bounds,parts,shape.module_radius,shape.shield_center,shape.shield_radius)
+				collision_models[key] = parts
+				collision_shapes[key] = shape
 			sync_collision_body(ship)
 	return true
 
@@ -629,13 +635,14 @@ static func sync_collision_body(ship: Dictionary) -> void:
 		return
 	var state: Dictionary = ship.battle
 	var destroyed := 0
+	var key := int(Defenses.body_geometry(ship).get("collision_kind",ship.kind))
 	if state.has("module_integrity"):
-		var parts: Array = collision_models[ship.kind]
+		var parts: Array = collision_models[key]
 		for index in parts.size():
 			var part: Dictionary = parts[index]
 			if state.module_integrity.get(part.mount,{}).get("hp",part.hp) <= 0.0:
 				destroyed |= 1 << index
-	collision_engine.set_body(ship.id,ship.kind,ship.pos,ship.heading,state.get("shield_offset",0.0),state.get("shield_arc_live",0.0) if state.shield else 0.0,destroyed)
+	collision_engine.set_body(ship.id,key,ship.pos,ship.heading,state.get("shield_offset",0.0),state.get("shield_arc_live",0.0) if state.shield else 0.0,destroyed)
 
 static func native_contact(world, shot: Dictionary, start: Vector2, finish: Vector2, relations: Dictionary) -> Dictionary:
 	var contacts: PackedFloat64Array = collision_engine.sweep(start,finish,shot.ship)
@@ -670,7 +677,7 @@ static func spatial_buckets(world, system_id: int) -> Dictionary:
 	for ship in world.ships.values():
 		if not available(ship, system_id) or phased(ship):
 			continue
-		var shape := Defenses.geometry(ship.kind)
+		var shape := Defenses.body_geometry(ship)
 		var reach: float = maxf(shape.module_radius, shape.shield_radius + Vector2(shape.shield_center).length())
 		var first := Vector2i(((Vector2(ship.pos) - Vector2.ONE * reach) / COLLISION_CELL).floor())
 		var last := Vector2i(((Vector2(ship.pos) + Vector2.ONE * reach) / COLLISION_CELL).floor())
@@ -706,7 +713,7 @@ static func trace(world, blast: Dictionary, start: Vector2, finish: Vector2, can
 			continue
 		if candidates == null and length_sq > 0.0:
 			var center: Vector2 = ship.pos
-			var shape := Defenses.geometry(ship.kind)
+			var shape := Defenses.body_geometry(ship)
 			var reach: float = shape.reach
 			var at := clampf((center - start).dot(span)/length_sq,0.0,1.0)
 			if center.distance_squared_to(start+span*at) > reach*reach:
@@ -831,7 +838,7 @@ static func project(world, system_id: int, delta: float) -> void:
 				if native and local.is_empty():
 					local = spatial_buckets(world,system_id)
 				for ship in nearby_targets(local,previous-Vector2(54,54),previous+Vector2(54,54)):
-					if ship.hp > 0.0 and previous.distance_to(ship.pos) <= float(Defenses.geometry(ship.kind).radius)+38.0 and world.enemy(blast,ship):
+					if ship.hp > 0.0 and previous.distance_to(ship.pos) <= float(Defenses.body_geometry(ship).radius)+38.0 and world.enemy(blast,ship):
 						victims.append(ship)
 				if not victims.is_empty() or blast.has("triggered"):
 					blast.triggered=true
@@ -841,7 +848,7 @@ static func project(world, system_id: int, delta: float) -> void:
 					world.combat_event("rupture",previous,system_id)
 					for victim in victims:
 						var direction := (Vector2(victim.pos)-previous).normalized()
-						var point := Vector2(victim.pos) - direction * float(Defenses.geometry(victim.kind).radius)
+						var point := Vector2(victim.pos) - direction * float(Defenses.body_geometry(victim).radius)
 						impact(world,blast,{"ship":victim,"point":point,"shield":Defenses.covered(victim,point)})
 						if native:
 							sync_collision_body(victim)

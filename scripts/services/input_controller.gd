@@ -31,6 +31,14 @@ static func _handle_canvas_zoom(game, event: InputEvent) -> bool:
 	return true
 
 static func _handle_watch_input(game, event: InputEvent) -> void:
+	# GUI delivery follows _input. A click on the overlay must reach the button
+	# even when the flight canvas occupies the same screen coordinates.
+	if event is InputEventMouseButton or event is InputEventMouseMotion or event is InputEventScreenTouch or event is InputEventScreenDrag:
+		var log_view = game.agent_bridge.watch_log
+		if log_view != null and is_instance_valid(log_view.panel) and log_view.panel.over_cheat_toggle(event.position):
+			if event is InputEventMouseButton and not event.pressed:
+				game.watch_drag = false
+			return
 	if DisplayServer.get_name() == "headless" or not game.playing:
 		game.get_viewport().set_input_as_handled()
 		return

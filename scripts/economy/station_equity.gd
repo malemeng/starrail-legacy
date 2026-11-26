@@ -29,6 +29,45 @@ static func freeze(world, station: Dictionary) -> void:
 		if table.total>0:
 			station.equity=table
 
+## Transfer the former proprietor's stake in this site only. Other investors retain their units.
+static func settle_capture(world, site: Dictionary, previous_flag: int, flag: int, person: int, former_company: int) -> void:
+	var table := cap_table(world,site)
+	var former_owner := int(site.owner)
+	var units := int(table.people.get(former_owner,0)) + int(table.factions.get(previous_flag,0))
+	table.people.erase(former_owner)
+	table.factions.erase(previous_flag)
+	if int(table.company) == former_company:
+		units += int(table.company_units)
+		table.company_units = 0
+		table.company = 0
+	if table.total == 0:
+		units = int(site.get("charter_units",0))
+		table.total = units
+	if units > 0:
+		if person > 0:
+			add_units(table.people,person,units)
+		elif flag >= 0:
+			add_units(table.factions,flag,units)
+		else:
+			table.treasury_units += units
+	# Release share reservations and return any escrow before switching operators.
+	var deal: Dictionary = world.campaign.get("diplomatic_deal",{})
+	for item in deal.get("give",[]) + deal.get("want",[]):
+		if item.kind == "station_share" and item.id == site.id:
+			world.DiplomaticTrade.unlock(world,deal)
+			break
+	for order in world.campaign.get("equity_orders",{}).get("orders",{}).values():
+		if order.scope == "station" and order.asset == site.id:
+			world.EquityOrders.close(world,order)
+	for listing in world.campaign.get("share_listings",{}).values():
+		if listing.scope == "station" and listing.asset == site.id and listing.status == "open":
+			listing.status = "void"
+	site.erase("primary_offer")
+	site.equity = table
+	site.firm = 0
+	if units > 0:
+		world.event("%s 完成产权交割：%d 股本站股份转入%s名下。" % [site.name,units,world.name_of(person) if person else world.flag_name(flag)])
+
 ## New incorporations can contribute the founder's own station. Replacing a manager cannot transfer another party's shares.
 static func set_operator(world, station: Dictionary, company: int) -> void:
 	if station.firm == company:

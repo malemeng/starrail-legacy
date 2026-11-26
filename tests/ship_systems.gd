@@ -251,17 +251,21 @@ func charges_and_targeting() -> void:
 	var heron:=hull(a,"heron",1,1,Vector2.ZERO)
 	heron.fit.wings=["broadsword_wing","broadsword_wing","broadsword_wing"]
 	Combat.Wings.advance(a,heron,foe,0,Combat)
-	var test_wing: Dictionary=heron.battle.fighter_wings[0]
-	test_wing.pos=foe.pos
-	test_wing.cool=0.0
-	a.projectiles.clear()
-	Combat.Wings.advance(a,heron,foe,.1,Combat)
-	var old: float=a.projectiles.back().damage
-	test_wing.cool=0.0
-	a.projectiles.clear()
+	var initial: Array=heron.battle.fighter_wings.duplicate(true)
+	var old := first_wing_round(a,heron,foe)
+	heron.battle.fighter_wings=initial
 	Combat.system(a,heron,Vector2.RIGHT)
-	Combat.Wings.advance(a,heron,foe,.1,Combat)
-	expect(is_equal_approx(a.projectiles.back().damage,old*Combat.Abilities.profile(heron).wing_damage),"damage changes on a deployed fighter projectile")
+	var boosted := first_wing_round(a,heron,foe)
+	expect(old>0 and is_equal_approx(boosted,old*Combat.Abilities.profile(heron).wing_damage),"damage changes on a deployed fighter projectile")
+
+func first_wing_round(arena, carrier: Dictionary, target: Dictionary) -> float:
+	for frame in 1200:
+		arena.projectiles.clear()
+		Combat.Wings.advance(arena,carrier,target,1.0/60,Combat)
+		for shot in arena.projectiles:
+			if shot.get("bay",-1)==0 and shot.get("airframe",-1)==0:
+				return float(shot.damage)
+	return 0.0
 
 func _initialize() -> void:
 	var covered:={}

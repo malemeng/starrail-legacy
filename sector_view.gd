@@ -8,6 +8,7 @@ const StationGeometry = preload("res://scripts/models/station_geometry.gd")
 const StationArt = preload("res://scripts/ui/station_art.gd")
 const SystemChart = preload("res://scripts/ui/system_chart.gd")
 const ShipVisual = preload("res://scripts/battle/ship_visual.gd")
+const WeaponArt = preload("res://art/weapon_mounts.gd")
 const FleetBatch = preload("res://scripts/battle/fleet_batch.gd")
 const CombatFields = preload("res://scripts/battle/combat_fields.gd")
 const WreckVisual = preload("res://scripts/battle/wreck_visual.gd")
@@ -38,8 +39,10 @@ var battlefield := Node2D.new()
 var battle_world := Node2D.new()
 var hud := Node2D.new()
 var visuals: Dictionary = {}
+var station_fits: Dictionary = {}
 var contacts: Array = []
 var visible_wings: Array = []
+var air_groups := WingVisuals.new()
 var fleet_batch := FleetBatch.new()
 var fields := CombatFields.new()
 var fields_frame := -1
@@ -78,6 +81,7 @@ func _ready() -> void:
 	if game != null: game.world.ship_wrecked.connect(on_ship_wrecked)
 	battle_world.add_child(fields.trails)
 	battle_world.add_child(fleet_batch)
+	battle_world.add_child(air_groups)
 	battle_world.add_child(fields)
 	hud.name = "HudLayer"
 	add_child(hud)
@@ -157,21 +161,28 @@ func sync_battlefield(system: int) -> void:
 		var lead_id: int = lead.get("id",0)
 		var flag_colors := {}
 		var local_ships: Array = []
+		var station_shields: Array[Dictionary] = []
 		var bounds := Rect2(location(Vector2.ZERO), size / zoom)
 		sync_wrecks(system,bounds)
 		var wing_bounds := bounds.grow(55.0)
 		for ship in world.ships.values():
 			if not Battle.available(ship, system):
 				continue
-			var detected: bool = lead.is_empty() or game.flight.visible_contact(lead,ship)
+			var detected: bool = ship.has("defense_port") or lead.is_empty() or game.flight.visible_contact(lead,ship)
 			for wing in ship.battle.get("fighter_wings",NO_WINGS):
-				if not wing.sortie or wing.hp <= 0.0 or not wing_bounds.has_point(wing.pos):
+				if not wing.sortie or wing.hp <= 0.0:
+					continue
+				if not wing_bounds.has_point(wing.pos) and not wing.get("craft",[]).any(func(unit): return unit.sortie and wing_bounds.has_point(unit.pos)):
 					continue
 				if detected or Vector2(lead.pos).distance_squared_to(wing.pos) <= pow(game.flight.sensor_reading.strength,2):
 					if not flag_colors.has(ship.flag):
 						flag_colors[ship.flag] = world.flag_color(ship.flag)
-					visible_wings.append([wing,ship.heading,CYAN if ship.id == lead_id else flag_colors[ship.flag]])
+					visible_wings.append([wing,ship.heading,CYAN if ship.id == lead_id else flag_colors[ship.flag],int(ship.get("defense_port",0))])
 			if not detected:
+				continue
+			if ship.has("defense_port"):
+				if bounds.grow(Battle.Defenses.body_geometry(ship).reach).has_point(ship.pos):
+					station_shields.append(ship)
 				continue
 			contacts.append(ship)
 			var shape := Battle.Defenses.geometry(ship.kind)
@@ -181,7 +192,11 @@ func sync_battlefield(system: int) -> void:
 			local_ships.append(ship)
 		crowded = local_ships.size() >= 12 or world.projectiles.size() >= 64
 		local_count = local_ships.size()
-		fields.begin(local_count, effect_delta)
+		fields.begin(local_count + station_shields.size(), effect_delta)
+		for gun in station_shields:
+			var tint := Color("79c6de")
+			tint.a = 0.42 + 0.58 * float(gun.battle.shield_flash)
+			fields.add_shield(gun,Battle.Defenses.shield_world_center(gun),Battle.Defenses.body_geometry(gun).shield_radius,tint)
 		for ship in local_ships:
 			var visual: ShipVisual = visuals.get(ship.id)
 			if visual == null:
@@ -199,6 +214,7 @@ func sync_battlefield(system: int) -> void:
 	else:
 		fields.begin(0, effect_delta)
 	fields.finish()
+	air_groups.sync(visible_wings)
 	if visuals.size() != local_count:
 		for id in visuals.keys():
 			var visual: ShipVisual = visuals[id]
@@ -220,7 +236,7 @@ func sync_battlefield(system: int) -> void:
 				battle_world.move_child(page, 1)
 				hull_pages.append(page)
 				page.add_vessel(view)
-		fleet_batch.sync(visuals, game.world.projectiles, particles, system,visible_wings)
+		fleet_batch.sync(visuals, game.world.projectiles, particles, system)
 	for page in hull_pages:
 		page.flush()
 	hud.queue_redraw()
@@ -339,6 +355,8 @@ func draw_tactical_map() -> void:
 	ink(Vector2(16,24), "舰队战术图 · 左键框选护航舰 · 右键舰船打开菜单 · 右键空白处指定航点", CYAN, 13)
 	for ship in world.ships.values():
 		if not Battle.available(ship, lead.system) or not game.flight.visible_contact(lead,ship):
+			continue
+		if ship.has("defense_port"):
 			continue
 		var pos := tactical_screen(ship.pos)
 		var tone := Color("f1927d") if world.enemy(lead, ship) else CYAN
@@ -521,6 +539,7 @@ func local_map(world, vessel: Dictionary, system_index: int) -> void:
 	var system: Dictionary = world.systems[system_index]
 	if crowded:
 		battle_landmarks(world, system)
+		station_wing_labels()
 		return
 	if not vessel.is_empty() and not vessel.locked:
 		draw_sensor_envelope(vessel, vessel.pos)
@@ -563,6 +582,8 @@ func local_map(world, vessel: Dictionary, system_index: int) -> void:
 	for other in world.ships.values():
 		if not Battle.available(other, system_index) or (not vessel.is_empty() and not game.flight.visible_contact(vessel,other)):
 			continue
+		if other.has("defense_port"):
+			continue
 		var own: bool = other.id == vessel.get("id", 0)
 		var pos := screen(other.pos)
 		tone = CYAN if own else world.flag_color(other.flag)
@@ -591,8 +612,7 @@ func local_map(world, vessel: Dictionary, system_index: int) -> void:
 		edge(screen(system.field), "矿带", GOLD, vessel, system.field)
 	elif not vessel.is_empty() and vessel.pos.distance_to(system.field) < 95.0 and not vessel.locked:
 		tag(screen(system.field) + Vector2(-31,61), "[G] 采掘", GOLD)
-	for flight in visible_wings:
-		WingVisuals.formation(flight[0],flight[1],flight[2],draw_ordnance_segment)
+	station_wing_labels()
 	for bolt in world.projectiles:
 		if bolt.system != system_index:
 			continue
@@ -618,6 +638,18 @@ func local_map(world, vessel: Dictionary, system_index: int) -> void:
 			edge(point, "航点", GOLD, vessel, game.waypoint)
 		draw_arc(point, 13, 0, TAU, 20, GOLD, 1, true)
 		draw_line(point - Vector2(17, 0), point + Vector2(17, 0), GOLD)
+
+func station_wing_labels() -> void:
+	var groups := {}
+	for flight in visible_wings:
+		var station := int(flight[3])
+		if station > 0:
+			var wing: Dictionary = flight[0]
+			var row: Dictionary = groups.get_or_add(station,{"pos":wing.pos,"aircraft":0,"squadrons":0})
+			row.aircraft += int(wing.get("airborne",wing.get("count_live",wing.count)))
+			row.squadrons += 1
+	for row: Dictionary in groups.values():
+		tag(screen(row.pos)+Vector2(12,-18),"驻站机群 · %d 队 / %d 架" % [row.squadrons,row.aircraft],Color("f5cd84"))
 
 func draw_ordnance_segment(a: Vector2, b: Vector2, width: float, color: Color) -> void:
 	draw_line(screen(a), screen(b), color, width * zoom, true)
@@ -663,6 +695,34 @@ func draw_station(world, station: Dictionary, vessel: Dictionary, tactical: bool
 	var geom := StationGeometry.layout(station)
 	var tint: Color = world.flag_color(station.flag)
 	var at := draw_station_hull(geom, tint, Color("a5abba") if station.build > 0 else Color.WHITE, tactical)
+	if not tactical and not station.has("assault") and station.build == 0 and centered_rect(geom.center,geom.span).intersects(Rect2(Vector2.ZERO,size)):
+		var signature := hash([station.modules,station.get("capital_yard",false),station.get("module_armaments",{})])
+		var cached: Dictionary = station_fits.get(station.id,{})
+		if cached.get("signature",-1) != signature:
+			cached = {"signature":signature,"rows":[]}
+			for i in station.modules.size()+1:
+				cached.rows.append({"kind":world.StationArmament.profile(station,i),"fit":world.StationArmament.fitting(station,i),"mount_offsets":world.StationArmament.mount_offsets(geom.parts[i]),"battle":{}})
+			if station_fits.size() >= 128:
+				station_fits.clear()
+			station_fits[station.id] = cached
+		for i in cached.rows.size():
+			var part: Dictionary = geom.parts[i]
+			var idle: Dictionary = cached.rows[i]
+			idle.pos = Vector2(geom.center) + Vector2(part.center).rotated(geom.angle)
+			idle.heading = geom.angle
+			idle.module_size = part.size
+			draw_station_weapons(idle,false)
+	for sid in station.get("assault",{}).get("nodes",[]):
+		var gun: Dictionary = world.ships.get(sid,{})
+		if not gun.is_empty():
+			draw_station_battery(gun,tactical)
+	if not tactical:
+		for index in station.get("assault",{}).get("disabled",[]):
+			var center: Vector2 = geom.center + Vector2(geom.parts[index].center).rotated(geom.angle)
+			var at_module := screen(center)
+			draw_line(at_module-Vector2(8,8),at_module+Vector2(8,8),Color("e88261"),2)
+			draw_line(at_module+Vector2(-8,8),at_module+Vector2(8,-8),Color("e88261"),2)
+			tag(at_module+Vector2(12,3),"武备失能",Color("d99876"))
 	if not in_frame(at):
 		if not tactical:
 			edge(at,station.name,tint,vessel,station.pos,game.entity_menus.ref_for("port",station.id))
@@ -679,6 +739,54 @@ func draw_station(world, station: Dictionary, vessel: Dictionary, tactical: bool
 		tag(name_at+Vector2(0,18),"[E] 停靠",CYAN)
 	elif not crowded:
 		ink(name_at+Vector2(0,16),("施工 %d 日" % station.build) if station.build > 0 else "%s · 泊位" % world.MODULES[station.module],Color("adb7bc"),12)
+
+func centered_rect(center: Vector2, span: float) -> Rect2:
+	var extent := Vector2.ONE * span * zoom
+	return Rect2(screen(center)-extent,extent*2.0)
+
+func draw_station_weapons(gun: Dictionary, tactical: bool) -> void:
+	var pos := tactical_screen(gun.pos) if tactical else screen(gun.pos)
+	var scale_factor := tactical_scale() if tactical else zoom
+	var hull_transform := Transform2D(gun.heading,Vector2.ONE * scale_factor,0,pos)
+	var angles: Array = gun.battle.get("turret_angles",[])
+	var recoils: Array = gun.battle.get("recoil",[])
+	var disabled: Array = gun.battle.get("disabled_slots",[])
+	for slot in gun.fit.weapons.size():
+		var id: String = gun.fit.weapons[slot]
+		if id == "":
+			continue
+		var mount := Hulls.slot_spec(gun.kind,slot)
+		var style := WeaponArt.profile(id)
+		var angle := float(angles[slot]) if slot < angles.size() else deg_to_rad(float(mount.facing))
+		var recoil := float(recoils[slot]) if slot < recoils.size() else 0.0
+		var pose := WeaponArt.pose(mount,style,angle,recoil)
+		pose.origin += Battle.slot_offset(gun,slot) - Vector2(mount.offset)
+		pose = hull_transform * pose
+		var jammed: bool = slot < disabled.size() and float(disabled[slot])>0.0
+		WeaponArt.draw_mount(self,pose,style.family,WeaponArt.tint(jammed,recoil))
+		if recoil > 0.75 and not jammed:
+			draw_circle(pose*Vector2(7,0),1.9*recoil*scale_factor,Color("ffe8aa"))
+
+func draw_station_battery(gun: Dictionary, tactical: bool) -> void:
+	var pos := tactical_screen(gun.pos) if tactical else screen(gun.pos)
+	var scale_factor := tactical_scale() if tactical else zoom
+	var shape := Battle.Defenses.body_geometry(gun)
+	var radius := maxf(4.0,shape.radius * scale_factor)
+	var tone := Color("f29273")
+	draw_station_weapons(gun,tactical)
+	if tactical and gun.battle.shield:
+		var origin := Battle.Defenses.shield_world_center(gun)
+		var shield := tactical_screen(origin) if tactical else screen(origin)
+		var facing := float(gun.heading) + float(gun.battle.shield_offset)
+		var half_arc := float(gun.battle.shield_arc_live)*0.5
+		draw_arc(shield,maxf(5.0,shape.shield_radius*scale_factor),facing-half_arc,facing+half_arc,48,Color("79e3fd"),2.0+gun.battle.shield_flash*2.0,true)
+	draw_rect(Rect2(pos+Vector2(-25,-radius-10),Vector2(50,4)),Color("422e33"))
+	draw_rect(Rect2(pos+Vector2(-25,-radius-10),Vector2(50*clampf(float(gun.hp)/Hulls.MODELS[gun.kind].hp,0,1),4)),tone)
+	draw_rect(Rect2(pos+Vector2(-25,-radius-15),Vector2(50,3)),Color("23404a"))
+	if gun.battle.shield:
+		draw_rect(Rect2(pos+Vector2(-25,-radius-15),Vector2(50*(1.0-clampf(Battle.fraction(gun),0,1)),3)),Color("79e3fd"))
+	if not tactical:
+		ink(pos+Vector2(-31,-radius-20),str(gun.job.label) + " · " + ("过载" if gun.battle.overload>0 else ("升盾" if gun.battle.shield else "无盾")),tone,13)
 
 func draw_outlaw_base(world, base: Dictionary, vessel: Dictionary, tactical: bool = false) -> void:
 	var spec: Dictionary = world.Outlaws.groups[base.group]

@@ -362,6 +362,14 @@ func port(body: Node) -> void:
 	var actor: Dictionary = world.active()
 	var port_id: int = actor.loc
 	var system_index: int = game.current_system()
+	var trip: Dictionary = world.passenger_trip(actor)
+	if not trip.is_empty():
+		heading(body, "客运航程")
+		hint(body, "#%d %s · 前往%s" % [trip.ship, trip.model, trip.dest_name])
+		hint(body, "停靠%s" % trip.dock_name if trip.can_disembark else "航行中，到站后自动下船。")
+		if trip.can_disembark:
+			game.button(body,"在此港下船",func(): result(Economy.disembark_passenger(world,world.player),"已下船。"))
+		return
 	if port_id == 0:
 		var region: Dictionary = world.systems[system_index]
 		heading(body, "星区导航" if game.galaxy else Celestial.profile(region).name)
@@ -393,7 +401,13 @@ func port(body: Node) -> void:
 				if can_target_station(vessel,station,actor.flag):
 					var actions = game.hbox(body)
 					var own_defense: bool = station.owner == world.player
-					game.button(actions,"攻击本站防务" if own_defense else "宣战 / 强占",func(): attack(station_id,false,own_defense))
+					var incumbent: int = world.StationAssault.defending_company(world,station)
+					var contested: bool = own_defense and incumbent > 0 and not world.oversees(world.firms.get(incumbent,{}).get("director",0))
+					var siege: Dictionary = station.get("assault",{})
+					var action_label := "攻击本站防务" if own_defense and not contested else ("争夺本站企业产权" if contested else "宣战 / 强占")
+					if not siege.is_empty():
+						action_label = "接收守军投降" if siege.nodes.is_empty() else "锁定武装模块（剩余 %d）" % siege.nodes.size()
+					game.button(actions,action_label,func(): attack(station_id,not siege.is_empty() and siege.contract,own_defense and not contested))
 					if actor.flag == world.NEUTRAL:
 						game.button(actions, "替雇主夺站", func(): attack(station_id, true))
 			var planets := MenuButton.new()
@@ -625,54 +639,31 @@ func station_attack_incident(station: Dictionary) -> void:
 	dates[world.player] = world.day
 	world.change_faction_trust(station.flag,world.player,-25,"进攻 " + station.name)
 
-func attack(port_id: int, mercenary: bool = false, own_defense: bool = false) -> void:
+func attack(port_id: int, mercenary: bool = false, own_defense: bool = false) -> bool:
 	var world = game.world
 	var vessel: Dictionary = world.ride()
 	var station: Dictionary = world.ports.get(port_id,{})
 	var actor: Dictionary = world.active()
 	if not can_target_station(vessel,station,actor.flag) or (mercenary and actor.flag != world.NEUTRAL):
 		game.say("请从旗舰视角，在目标星系的本地空间选择可进攻的航站。")
-		return
-	if own_defense != (station.owner == world.player):
+		return false
+	var incumbent: int = world.StationAssault.defending_company(world,station)
+	var disputed_title: bool = station.owner == world.player and incumbent > 0 and not world.oversees(world.firms.get(incumbent,{}).get("director",0))
+	if own_defense != (station.owner == world.player and not disputed_title):
 		game.say("空间站产权已变化，请重新选择目标。")
-		return
-	if vessel.pos.distance_to(station.pos) > 150:
-		game.say("先靠近目标空间站（150 距离内）。")
-		return
-	if game.flight.target(vessel, 395) != 0:
-		game.say("附近有敌方守卫，先击退它们。")
-		return
-	if actor.flag >= 0 and station.flag >= 0 and actor.flag != station.flag and not world.hostile(actor.flag,station.flag):
-		station_attack_incident(station)
-		world.set_treaty(actor.flag, station.flag, -1)
-		result(true, "已宣战；击退守卫后可再次发起强占。")
-		return
-	for guard in world.ships.values():
-		if guard.id == vessel.id or not game.Battle.available(guard,station.system) or guard.pos.distance_to(station.pos) >= 510:
-			continue
-		var defends: bool = (station.flag >= 0 and guard.flag == station.flag) or guard.get("station_owner",0) == port_id or (station.owner != 0 and guard.owner == station.owner)
-		if defends and not world.can_operate(guard):
-			station_attack_incident(station)
-			world.engage_ship(vessel,guard,0)
-			if actor.flag == world.NEUTRAL and station.flag >= 0:
-				vessel.raid = station.flag
-			result(true,"突袭已暴露，守卫开始反击。")
-			return
-	if vessel.locked:
-		flight_unlock(world, vessel)
-	if vessel.hp <= station.defense * 0.5:
-		game.say("船体不足以强攻防务。")
-		return
+		return false
+	var distance: float = vessel.pos.distance_to(station.pos)
+	if distance > world.StationAssault.APPROACH_RANGE or (own_defense and distance > world.StationAssault.SURRENDER_RANGE):
+		game.say("先进入空间站外围（1800 距离内）。" if not own_defense else "请在泊位附近操作。")
+		return false
 	var flag: int = actor.flag
-	if not mercenary and station.owner == world.player:
+	if own_defense:
 		if station.defense <= 0:
 			game.say("本站防务已被摧毁。")
-			return
-		station_attack_incident(station)
-		vessel.hp -= station.defense * 0.5
+			return false
 		station.defense = 0
 		result(true,"已摧毁本站防务。")
-		return
+		return true
 	if mercenary:
 		for candidate in world.factions:
 			if world.factions[candidate].alive and world.hostile(candidate, station.flag):
@@ -680,15 +671,55 @@ func attack(port_id: int, mercenary: bool = false, own_defense: bool = false) ->
 				break
 		if flag == world.NEUTRAL:
 			game.say("没有正在与目标交战的雇主。")
-			return
-		world.credit(world.player, 280,vessel,"作战委托")
+			return false
+	if station.has("occupied_from") and (station.flag == flag or mercenary):
+		game.say("己方已占领本站，永久归属须在和谈时决定。")
+		return false
+	var siege: Dictionary = station.get("assault",{})
+	var opening := siege.is_empty()
+	if opening:
+		station_attack_incident(station)
+		world.StationAssault.start(world,station,vessel,flag,mercenary)
+		siege = station.assault
+	if siege.actor != actor.id or siege.ship != vessel.id or siege.contract != mercenary:
+		game.say("本站已有其他部队正在围攻。")
+		return false
+	if not siege.nodes.is_empty():
+		game.selected_target = int(siege.nodes[0])
+		game.waypoint_live = false
+		vessel.locked = true
+		game.set_speed(1)
+		var declaration := ""
+		if opening and incumbent > 0 and world.firms.has(incumbent):
+			declaration = "与%s交战。 " % world.firms[incumbent].name
+		result(true,declaration + "各模块已升盾开火。击退武装模块和守舰，再到泊位接收投降。")
+		return true
+	if game.flight.target(vessel,510.0) != 0:
+		game.say("站防已失能，附近仍有敌舰抵抗。")
+		return false
+	if distance > world.StationAssault.SURRENDER_RANGE:
+		game.say("守军已失去抵抗能力，请接近泊位（150 距离内）接收投降。")
+		return false
+	world.StationAssault.clear(world,station)
+	flight_unlock(world,vessel)
+	if mercenary:
+		world.credit(world.player,280,vessel,"作战委托")
 		world.change_faction_trust(flag,world.player,5,"完成夺站委托")
-	station_attack_incident(station)
-	vessel.hp -= station.defense * 0.5
-	Politics.conquer(world, port_id, flag, 0 if mercenary else world.player)
+	var war: Dictionary = world.campaign.get("company_wars",{}).get(siege.company_war,{})
+	if not war.is_empty():
+		war.last_action = world.day
+		var seized: Array = war.get_or_add("seized",[])
+		if port_id not in seized:
+			seized.append(port_id)
+	if flag >= 0 and station.flag >= 0 and world.hostile(flag,station.flag):
+		world.WarPeace.occupy(world,port_id,flag)
+		result(true,"守军已投降。本站进入战时占领，割让条款生效后交割产权。")
+		return true
+	Politics.conquer(world,port_id,flag,0 if mercenary else world.player,mercenary,siege.firm)
 	vessel.raid = world.NEUTRAL
 	vessel.flag = actor.flag
-	result(true, "空间站已接管。")
+	result(true, "守军已投降，本站经营权和原业主的本站持股已交割。")
+	return true
 
 func flight_unlock(world, vessel: Dictionary) -> void:
 	if game.flight.target(vessel, 380) == 0:
@@ -1144,6 +1175,19 @@ func open_ship_company(ship_id: int) -> void:
 	game.add_child(dialog)
 	dialog.popup_centered(Vector2i(430,260))
 
+func service_buttons(body: Node, vessel: Dictionary) -> void:
+	var world = game.world
+	if int(vessel.captain) in [0, world.player]:
+		return
+	var row = game.hbox(body)
+	game.button(row, "开通自营客运班线", func():
+		var res := Economy.assign_passenger_liner(world, vessel.id)
+		result(res.ok, "已开通自营公共客运班线。", str(res.get("reason",""))))
+	if world.Hulls.can_build_station(vessel.kind):
+		game.button(row, "派遣工程承包接单", func():
+			var res: Dictionary = world.ConstructionContract.assign_contractor(world, vessel.id)
+			result(res.ok, "工程代理人已开始自动承接轨道工程订单。", str(res.get("reason",""))))
+
 func assets(body: Node) -> void:
 	var world = game.world
 	if diagnostics_open:
@@ -1164,7 +1208,7 @@ func assets(body: Node) -> void:
 	var owned_ships: Array = []
 	for ship_id in world.ships:
 		var owned: Dictionary = world.ships[ship_id]
-		if world.oversees(world.ship_principal(owned)):
+		if world.can_dispatch_service(owned):
 			owned_ships.append(owned)
 		elif owned.get("charter",{}).get("operator",0) == actor.id:
 			heading(body,"航务局配舰")
@@ -1208,6 +1252,10 @@ func assets(body: Node) -> void:
 			var cbtn: Button = game.button(register,"船长：%s" % world.name_of(owned.captain),func(): dossier.open(game,owned.captain))
 			bind_character_menu(cbtn, owned.captain)
 		game.button(card_col,"查看航程、账目与隶属关系",func(): open_diagnostics(ship_id))
+		if owned.has("station_owner"):
+			hint(card_col, "站属舰船 · " + world.ports[owned.station_owner].name + " · " + str(owned.job.get("kind","待命")))
+			service_buttons(card_col, owned)
+			continue
 		if owned.has("firm"):
 			hint(card_col,"公司所有　" + world.firms[owned.firm].name)
 		elif owned.owner != actor.id:
@@ -1330,15 +1378,7 @@ func assets(body: Node) -> void:
 				result(Economy.lease_ship_to_station(world, ship_id, lease_ports[lease_pick.selected], "站属贸易"), "已租赁给该空间站执行贸易。"))
 			game.button(lease_row, "租给采矿", func():
 				result(Economy.lease_ship_to_station(world, ship_id, lease_ports[lease_pick.selected], "站属采矿"), "已租赁给该空间站执行采矿。"))
-		if owned.id != actor.ship and int(owned.captain) not in [0, world.player]:
-			var svc_row = game.hbox(body)
-			game.button(svc_row, "开通自营客运班线", func():
-				var res: Dictionary = Economy.assign_passenger_liner(world, ship_id)
-				result(bool(res.get("ok", false)), "已开通自营公共客运班线。", String(res.get("reason", ""))))
-			if world.Hulls.can_build_station(owned.kind):
-				game.button(svc_row, "派遣工程承包接单", func():
-					var res: Dictionary = world.ConstructionContract.assign_contractor(world, ship_id)
-					result(bool(res.get("ok", false)), "工程代理人已开始自动承接轨道工程订单。", String(res.get("reason", ""))))
+		service_buttons(body, owned)
 		if not my_sites.is_empty():
 			var stops_all := routes([])
 			if not stops_all.is_empty():
@@ -1515,6 +1555,12 @@ func powers(body: Node) -> void:
 		if world.CompanyWars.is_pure_company(world, firm_id):
 			var wars: Array = world.CompanyWars.active_wars_for_firm(world, firm_id)
 			for cw in wars:
+				if cw.has("opponent_kind"):
+					var war_key: String = world.campaign.company_wars.find_key(cw)
+					UIKit.badge(ccard,"资产战争：%s 与 %s" % [world.firms[cw.firm_id].name,world.CompanyWars.opponent_name(world,cw)],"danger")
+					if world.CompanyWars.can_end_asset_war(world,cw):
+						game.button(ccard,"结束资产战争",func(): result(world.CompanyWars.end_asset_war(world,war_key),"已签订停战协议。"))
+					continue
 				UIKit.badge(ccard, "私掠交战并禁运：%s（%s · %.0f:%.0f · 劫掠 %d 次）" % [
 					world.flag_name(int(cw.target_flag)), cw.get("pretext_label", "商业纠纷"),
 					float(cw.get("firm_score", 0.0)), float(cw.get("target_score", 0.0)), int(cw.get("raids", 0))], "danger")

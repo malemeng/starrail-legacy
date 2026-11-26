@@ -1,12 +1,11 @@
 extends MultiMeshInstance2D
 
 # Every segment is an independently colored, transformed quad. One canvas draw
-# covers thrusters, wings and projectile trails. Textured guns are batched by family.
+# covers thrusters and projectile trails. Textured guns are batched by family.
 const Hulls = preload("res://hull_catalog.gd")
 const Battle = preload("res://combat.gd")
 const ShipVisual = preload("res://scripts/battle/ship_visual.gd")
 const Ordnance = preload("res://scripts/battle/ordnance_visuals.gd")
-const WingVisuals = preload("res://scripts/battle/wing_visuals.gd")
 const SHOT_COLORS := [Color("b1d4eb"), Color("f4a273"), Color("69cedc"), Color("bbbd86")]
 const RESTING_SLOTS := []
 var count := 0
@@ -50,7 +49,7 @@ func segment(start: Vector2, end: Vector2, width: float, color: Color) -> void:
 	instances[offset+11] = color.a
 	count += 1
 
-func sync(visuals: Dictionary, shots: Array, effects: Array, system: int, wings: Array) -> void:
+func sync(visuals: Dictionary, shots: Array, effects: Array, system: int) -> void:
 	count = 0
 	projectile_count = 0
 	if native == null and ClassDB.class_exists(&"FleetStrokes"):
@@ -93,8 +92,6 @@ func sync(visuals: Dictionary, shots: Array, effects: Array, system: int, wings:
 			var recoil: float = recoil_by_slot[i] if i < recoil_by_slot.size() else 0.0
 			weapons.add_mount(transform,mount,id,angle,recoil,i < disabled.size() and disabled[i] > 0)
 	weapons.finish()
-	for flight in wings:
-		WingVisuals.formation(flight[0],flight[1],flight[2],segment)
 	var remaining: Array = shots
 	if native != null:
 		remaining = native.projectiles(shots,system,SHOT_COLORS,Ordnance.GLYPHS)

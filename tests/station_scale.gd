@@ -77,24 +77,25 @@ func construction(world, ship: Dictionary) -> void:
 	var center := Vector2(200000,200000)
 	region.planets.append({"pos":center,"radius":700})
 	var actor: Dictionary = world.active()
-	actor.wallet = 1000
 	var cost := int(Economy.Industry.CONSTRUCTION.foundation.credits)
+	var remaining := cost + 1000
+	actor.wallet = cost + remaining
 	var berth := center + Vector2(800,0)
 	ship.pos = berth
 	var id := Economy.deploy(world,2,berth)
-	if not check_site(world,id,1000-cost):
+	if not check_site(world,id,remaining):
 		return
 	var dock := Geometry.layout(world.ports[id])
 	check(dock.outward.dot(berth.direction_to(center)) > 0.99 and not Geometry.intersects_body(dock,region.planets.back()),"orbital yard extends away from the planet")
 	var nearby := center + Vector2(800,0).rotated(0.28)
 	ship.pos = nearby
-	check(berth.distance_to(nearby) > Economy.Industry.CONSTRUCTION.minimum_separation and Economy.deploy(world,2,nearby) == 0 and actor.wallet == 1000-cost,
+	check(berth.distance_to(nearby) > Economy.Industry.CONSTRUCTION.minimum_separation and Economy.deploy(world,2,nearby) == 0 and actor.wallet == remaining,
 		"separated berth beacons do not permit two overlapping yards or deduct fees")
 	var opposite := center - Vector2(800,0)
 	var moon := {"pos":opposite-Vector2(300,0),"radius":80}
 	region.planets.append(moon)
 	ship.pos = opposite
-	check(Economy.deploy(world,2,opposite) == 0 and actor.wallet == 1000-cost,"a body intersecting the station blocks a clear berth without charge")
+	check(Economy.deploy(world,2,opposite) == 0 and actor.wallet == remaining,"a body intersecting the station blocks a clear berth without charge")
 
 func check_site(world, id: int, wallet: int) -> bool:
 	var ok: bool = world.ports.has(id) and world.active().wallet == wallet

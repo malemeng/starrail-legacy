@@ -26,6 +26,7 @@ func run() -> void:
 	api.game = game
 	check(api.dispatch("new_game",{"seed":"wing-workshop","systems":12,"factions":3}).ok,"create a normal campaign")
 	var world = game.world
+	strafe_runs()
 	var port: int = world.active().loc
 	var listing: Dictionary = api.observe().ports.filter(func(p): return p.id == port)[0]
 	check(listing.wing_catalog.size() == 31,"31 real workshop listings in port")
@@ -103,6 +104,76 @@ func verify_rejections(world, api, carrier: Dictionary, port: int) -> void:
 	var fixed: int = world.ship(Hulls.kind_for_reference("shepherd"),world.player,0,carrier.flag,carrier.system,station.pos,port)
 	check(world.pilot(fixed) and not api.dispatch("refit_wing",{"bay":0,"wing_id":eligible}).ok,"built-in Shepherd bay stays locked")
 	check(world.pilot(carrier.id),"board open-bay carrier again")
+
+func strafe_runs() -> void:
+	var w = preload("res://world.gd").new()
+	w.new_game({"seed":"wing-turns","systems":12,"factions":3})
+	var enemy: Dictionary = w.ride()
+	w.depart(enemy)
+	enemy.pos = Vector2(7000,4000)
+	enemy.heading = PI
+	enemy.battle.motion = Vector2(18,7)
+	enemy.battle.shield = true
+	enemy.battle.shield_arc_live = PI
+	var carrier: Dictionary = w.ships[w.ship(Hulls.kind_for_reference("condor"),0,0,0,0,enemy.pos-Vector2(700,0))]
+	Battle.ensure_state(carrier)
+	Battle.ensure_state(enemy)
+	var squad: Dictionary
+	var phases := {}
+	var volley := 0
+	var max_passes := 0
+	var fired_forward := true
+	var launch_offsets := {}
+	var fired_passes := {}
+	var side_min := INF
+	var side_max := -INF
+	var min_gap := INF
+	var max_gap := 0.0
+	var split_headings := false
+	for tick in 3000:
+		if tick == 1100:
+			enemy.battle.motion = Vector2(-12,-5)
+		enemy.pos += Vector2(enemy.battle.motion)/60.0
+		Battle.Wings.advance(w,carrier,enemy,1.0/60,Battle,[],[])
+		squad = carrier.battle.fighter_wings.front()
+		for unit in squad.craft:
+			var run: Dictionary = unit.get("run",{})
+			if not run.is_empty():
+				phases[run.phase] = true
+				max_passes = maxi(max_passes,int(run.passes))
+				var lateral := float(unit.pos.y-enemy.pos.y)
+				side_min = minf(side_min,lateral)
+				side_max = maxf(side_max,lateral)
+		var a: Dictionary = squad.craft[0]
+		var b: Dictionary = squad.craft[1]
+		if a.sortie and b.sortie:
+			var gap := Vector2(a.pos).distance_to(b.pos)
+			min_gap = minf(min_gap,gap)
+			max_gap = maxf(max_gap,gap)
+			split_headings = split_headings or absf(angle_difference(a.heading,b.heading))>0.6
+		for shot in w.projectiles:
+			if shot.get("bay",-1)==0:
+				var shooter: Dictionary = squad.craft[int(shot.airframe)]
+				if Vector2(shot.pos).is_equal_approx(shooter.pos):
+					volley += 1
+					launch_offsets[shooter.index] = true
+					fired_passes[shooter.run.passes] = true
+					fired_forward = fired_forward and Vector2.from_angle(shooter.heading).dot(Vector2(shot.vel).normalized())>0.65
+		w.projectiles.clear()
+	check(phases.has("flank") and phases.has("strafe") and phases.has("break") and max_passes>=2 and fired_passes.size()>=2,"moving target receives repeated attack runs separated by an actual break and turn")
+	check(side_min < -35 and side_max > 35,"squadron sweeps both flanks instead of hovering at a firing point")
+	check(volley>0 and launch_offsets.size()>=2 and fired_forward,"individual surviving aircraft fire forward from their displayed positions")
+	check(split_headings and max_gap-min_gap>75 and phases.has("rally"),"airframes separate by changing distances and headings, then rendezvous between passes")
+	print("Airframe manoeuvres: wingmate separation %.1f..%.1f, completed passes %d, firing airframes %d" % [min_gap,max_gap,max_passes,launch_offsets.size()])
+	enemy.pos = Vector2(carrier.pos)+Vector2(400,20)
+	for tick in 90:
+		Battle.Wings.advance(w,carrier,enemy,1.0/60,Battle,[],[])
+		if squad.sortie and Vector2(squad.pos).distance_to(carrier.pos)>70:
+			break
+	var damaged: Dictionary = squad.craft.front()
+	damaged.hp = damaged.max_hp*0.3
+	Battle.Wings.advance(w,carrier,enemy,1.0/60,Battle,[],[])
+	check(damaged.returning and squad.craft.any(func(unit): return unit.hp>0 and not unit.returning),"one badly damaged aircraft returns while its squadmates stay on mission")
 
 func exercise(world, id: String) -> bool:
 	var carrier: Dictionary = world.ride()

@@ -564,13 +564,16 @@ static func new_adventurer(world) -> bool:
 	world.event("新的开拓者「%s」在 %s 登舰启航，继续在这片星区航行。" % [new_name, station.name])
 	return true
 
-static func conquer(world, port_id: int, attacker: int, owner: int = 0) -> void:
+static func conquer(world, port_id: int, attacker: int, owner: int = 0, annex: bool = false, former_company: int = -1) -> void:
 	if Society.civil_capture(world, port_id, attacker):
 		return
 	var station: Dictionary = world.ports[port_id]
 	var previous: int = station.get("occupied_from", station.flag)
 	station.erase("occupied_from")
-	world.StationEquity.freeze(world,station)
+	if owner > 0 or annex:
+		world.StationEquity.settle_capture(world,station,previous,attacker,owner,int(station.firm) if former_company < 0 else former_company)
+	else:
+		world.StationEquity.freeze(world,station)
 	var old_manager: int = station.manager
 	if old_manager != 0:
 		world.people[old_manager].employer = 0
@@ -701,6 +704,8 @@ static func military(world) -> void:
 				continue
 			deployed = true
 			var target: Dictionary = world.ports[vessel.job.target]
+			if target.has("assault"):
+				continue
 			if not world.hostile(flag, target.flag):
 				vessel.job = {"kind": "护航", "system": vessel.system}
 				continue

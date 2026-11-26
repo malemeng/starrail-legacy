@@ -135,6 +135,13 @@ static func activate(world,vessel: Dictionary,direction: Vector2,spec: Dictionar
 				wing.returning = true
 				wing.sortie = false
 				wing.cool = minf(wing.cool,0.4)
+				for unit in wing.get("craft",[]):
+					unit.pos = vessel.pos
+					unit.returning = true
+					unit.sortie = false
+					unit.cool = minf(unit.cool,0.4)
+					unit.launch_in = 0.45 + int(unit.index)*0.12
+					unit.erase("run")
 		"flare","flak","screen":
 			for i in int(spec.count):
 				var vector := forward.rotated(TAU*i/spec.count)
@@ -231,7 +238,8 @@ static func pulses(world,vessel: Dictionary,spec: Dictionary,dt: float,combat) -
 							point=Vector2(ship.pos)+Vector2(engines[candidate-slot_count]).rotated(ship.heading)
 					Ordnance.direct_hit(world,vessel,ship,2,spec.power,2,point,forward,combat)
 				for wing in ship.battle.get("fighter_wings",[]):
-					if Vector2(wing.pos).distance_to(vessel.pos)<=spec.reach: wing.hp-=spec.power
+					for unit in wing.get("craft",[wing]):
+						if unit.sortie and Vector2(unit.pos).distance_to(vessel.pos)<=spec.reach: unit.hp-=spec.power
 			for missile in world.projectiles:
 				if missile.missile and world.enemy(vessel,missile) and missile.system==vessel.system and Vector2(missile.pos).distance_to(vessel.pos)<=spec.reach: missile.hp-=spec.power
 		"gaze":

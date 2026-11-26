@@ -595,6 +595,9 @@ func drive_ai(other: Dictionary, lead: Dictionary, delta: float, missiles: Varia
 	var world = game.world
 	var state: Dictionary = other.battle
 	Battle.ensure_state(other)
+	if other.has("defense_port"):
+		world.StationAssault.fire(world,other,lead,delta)
+		return
 	if other.has("construction_contract") and world.ConstructionContract.is_escort(other,lead,world.player):
 		state.ai = "随行施工"
 		state.target_id = 0

@@ -147,6 +147,13 @@ static func decode(data: Dictionary, wares: int) -> Dictionary:
 			if not ownership.get("treasury_units",0) is int or ownership.get("treasury_units",0) < 0:
 				return {}
 			var issued: int = ownership.company_units + ownership.get("treasury_units",0)
+			var public_units: Variant = ownership.get("factions",{})
+			if not public_units is Dictionary:
+				return {}
+			for flag in public_units:
+				if not copy.factions.has(flag) or not public_units[flag] is int or public_units[flag] <= 0:
+					return {}
+				issued += int(public_units[flag])
 			for holder in ownership.people:
 				if not copy.people.has(holder) or not ownership.people[holder] is int or ownership.people[holder] <= 0:
 					return {}

@@ -30,7 +30,7 @@ func attach_watch(layer: CanvasLayer) -> void:
 	step_progress.connect(watch_log.progress)
 
 func watch_station_ui(tab_name: String, dock_mode: String, note: String) -> void:
-	if bound_actor_id != 0 or DisplayServer.get_name() == "headless":
+	if bound_actor_id != 0 or (DisplayServer.get_name() == "headless" and not watch_mode):
 		return
 	if not tab_name.is_empty():
 		game.tab = tab_name
@@ -42,6 +42,20 @@ func watch_station_ui(tab_name: String, dock_mode: String, note: String) -> void
 signal request_started(action: String, args: Dictionary)
 signal request_finished(action: String, args: Dictionary, response: Dictionary)
 signal step_progress(processed: int, ticks: int)
+
+func show_service_ship(ship_id: int) -> void:
+	if bound_actor_id != 0 or not watch_mode:
+		return
+	game.hud.selected_ship_id = ship_id
+	game.hud.asset_filter = "all"
+	game.hud.diagnostics_open = false
+	game.hud.report_open = false
+	game.hud.equity.mode = ""
+	game.system_chart = false
+	watch_station_ui("资产", "", "")
+	if game.side_collapsed:
+		game.toggle_side_panel()
+	game.refresh()
 
 var game
 var directory := ""
@@ -189,7 +203,10 @@ func _observe_inner() -> Dictionary:
 		return {"screen":"succession","day":world.day,"candidates":heirs.slice(0,40)}
 	var actor: Dictionary = world.active()
 	var vessel: Dictionary = world.ride()
+	var trip: Dictionary = world.passenger_trip(actor)
 	var system_index: int = int(vessel.get("system",world.ports.get(actor.loc,{}).get("system",0))) if bound_actor_id > 0 else game.current_system()
+	if not trip.is_empty():
+		system_index = trip.system
 	var in_hyperspace: bool = vessel.get("layer",false) if bound_actor_id > 0 else game.galaxy
 	var region: Dictionary = world.systems[system_index]
 	var state := {"screen":"port" if actor.loc != 0 else ("hyperspace" if in_hyperspace else "flight"),
@@ -200,6 +217,11 @@ func _observe_inner() -> Dictionary:
 	state.allow_cheats = allow_cheats
 	state.intent = intention.duplicate()
 	state.actor.stats = actor.stats.to_dict()
+	state.actor.port = int(actor.loc)
+	state.actor.port_name = world.ports.get(actor.loc, {}).get("name", "")
+	if not trip.is_empty():
+		state.screen = "passenger"
+		state.passenger_trip = trip
 	state.actor.spouse = actor.spouse
 	state.actor.children = actor.children.duplicate()
 	state.actor.parents = actor.parents.duplicate()
@@ -238,18 +260,22 @@ func _observe_inner() -> Dictionary:
 	var managed_ports: Array[int] = []
 	for st_id in world.ports:
 		var st: Dictionary = world.ports[st_id]
-		if st.build == 0 and (world.oversees(st.get("owner", 0)) or world.oversees(st.get("manager", 0))):
+		if st.build == 0 and world.Dividends.can_manage(world, st):
 			managed_ports.append(int(st_id))
 	var fleets: Array = []
 	for other in world.ships.values():
-		if world.oversees(world.ship_principal(other)) or int(other.get("station_owner", 0)) in managed_ports:
+		if world.can_dispatch_service(other) or other.get("charter", {}).get("operator", 0) == actor.id:
 			fleets.append({"id":other.id,"model":world.HULLS[other.kind],"captain":other.captain,"owner":other.owner,
+				"hull_id":other.hull_id,"captain_name":world.name_of(other.captain) if other.captain else "",
+				"can_dispatch":world.can_dispatch_service(other),"engineering":Hulls.can_build_station(other.kind),
 				"system":other.system,"dock":other.dock,"pos":coords(other.galpos if other.layer else other.pos),
 				"hp":other.hp,"fuel":other.fuel,"firm":other.get("firm",0),"station_owner":other.get("station_owner",0),"job":other.job.duplicate(true),
 				"order":Battle.ORDERS[other.battle.order],"route_hold":other.get("route_hold",""),
 				"order_queue":other.get("order_queue",[]).duplicate(true),"default_behavior":other.get("default_behavior",other.job).duplicate(true),
 				"fleet_role":other.get("fleet_role",""),"commander":other.get("commander_id",0),"last_order":other.get("last_order",{}).duplicate(true),
 				"operating_area":Economy.OperatingArea.settings(world,other),"next_operating_area":other.get("next_operating_area",{})})
+			if other.get("charter",{}).get("operator",0) == actor.id:
+				fleets.back().charter = Economy.charter_quote(world, other.id)
 	state.managed_ports = managed_ports
 	state.fleet = fleets
 	if not vessel.is_empty():
@@ -290,6 +316,10 @@ func _observe_inner() -> Dictionary:
 			var station: Dictionary = world.ports[port_id]
 			var entry := {"id":port_id,"name":station.name,"pos":coords(station.pos),"hostile":world.hostile(actor.flag,station.flag),
 				"planet_index":station.get("planet_index",null),"construction_days":station.build}
+			entry.operator = station.firm
+			entry.occupied_from = station.get("occupied_from",world.NEUTRAL)
+			if station.has("assault"):
+				entry.defense_targets = station.assault.nodes.duplicate()
 			if actor.loc == port_id:
 				entry.market_size = Economy.market_size(station)
 				entry.market_size_label = Economy.market_size_label(station)
@@ -319,14 +349,15 @@ func _observe_inner() -> Dictionary:
 		for other in world.ships.values():
 			if not vessel.is_empty() and other.id != vessel.id and Battle.available(other,system_index) and vessel.pos.distance_to(other.pos) <= 680.0 and game.flight.visible_contact(vessel,other):
 				state.targets.append({"id":other.id,"pos":coords(other.pos),"velocity":coords(other.battle.motion),"hp":other.hp,
-					"armor":other.battle.armor,"shield":other.battle.shield,"hostile":world.enemy(vessel,other),"model":world.HULLS[other.kind],
+					"armor":other.battle.armor,"shield":other.battle.shield,"hostile":world.enemy(vessel,other),"model":other.job.label if other.has("defense_module") else world.HULLS[other.kind],
+					"defense_port":other.get("defense_port",0),"defense_module":other.get("defense_module",-1),"flux_fraction":Battle.fraction(other),
 					"organization":world.Outlaws.id_for(other),"flag":world.flag_name(other.flag)})
 		if actor.loc != 0:
 			for other in world.people.values():
 				if other.alive and other.id != actor.id and other.loc == actor.loc:
 					var prof := ShareholderRelations.profile(world, other.id)
 					state.contacts.append({
-						"id":other.id,"name":other.name,"age":Politics.age(world,other),"gender":"女" if int(other.get("gender",0)) == 1 else "男",
+						"id":other.id,"name":other.name,"age":Politics.age(world,other),"ship":other.ship,"employer":world.reports_to(other),"gender":"女" if int(other.get("gender",0)) == 1 else "男",
 						"noble":other.noble,"house":other.get("house",""),"flag":other.flag,"flag_name":world.flag_name(other.flag),
 						"trait":world.TRAITS[other.trait],"traits":world.Society.trait_labels(other),
 						"spouse":other.spouse,"opinion":Politics.opinion(world,other.id,actor.id),
@@ -340,7 +371,7 @@ func _observe_inner() -> Dictionary:
 					var id := int(pid)
 					if id != actor.loc and world.ports.has(id):
 						stops.append({"port": id, "name": world.ports[id].name, "fare": Economy.passenger_fare(world, actor, liner, id)})
-				liners_list.append({"ship": liner.id, "passengers": liner.get("passengers", []).size(), "capacity": Economy.passenger_capacity(liner), "stops": stops})
+				liners_list.append({"ship": liner.id, "model":world.HULLS[liner.kind], "passengers": liner.get("passengers", []).size(), "capacity": Economy.passenger_capacity(liner), "stops": stops})
 			if not liners_list.is_empty():
 				state.passenger_liners = liners_list
 		if not vessel.is_empty() and actor.loc == 0 and not game.galaxy:
@@ -700,6 +731,7 @@ func _dispatch_inner(action: String, args: Dictionary) -> Dictionary:
 			if report.is_empty():
 				return failure("ship_unavailable")
 			report["speed"] = game.speed
+			show_service_ship(id)
 			return success(report)
 		"save_game":
 			var path := resolve_save_path(args.get("slot", "main"))
@@ -715,7 +747,7 @@ func _dispatch_inner(action: String, args: Dictionary) -> Dictionary:
 				"protocol": PROTOCOL,
 				"allow_cheats": allow_cheats,
 				"tactics": game.COMBAT_TACTICS,
-				"new_actions": ["people", "person_info", "factions", "systems", "hull_catalog", "weapon_catalog", "interact", "list_saves", "save_game", "load_game", "set_tactic", "cheat", "capabilities"],
+				"new_actions": ["people", "person_info", "factions", "systems", "hull_catalog", "weapon_catalog", "interact", "list_saves", "save_game", "load_game", "set_tactic", "cheat", "capabilities", "disembark", "board_liner", "disembark_liner", "debug_ship", "hire_captain", "assign_passenger_liner", "assign_contractor"],
 				"cheat_kinds": ["credits", "fuel", "repair", "trust", "opinion", "tick", "reveal"] if allow_cheats else []
 			})
 		"interact","object_actions":
@@ -994,7 +1026,7 @@ func _dispatch_inner(action: String, args: Dictionary) -> Dictionary:
 				"faction_trust":f_scores})
 		"cheat":
 			if not allow_cheats:
-				return failure("cheats_disabled_by_player")
+				return failure("cheats_disabled_by_player","玩家未允许 Agent 作弊。")
 			var kind := str(args.get("kind", ""))
 			var actor: Dictionary = world.active()
 			match kind:
@@ -1010,7 +1042,7 @@ func _dispatch_inner(action: String, args: Dictionary) -> Dictionary:
 				"repair":
 					var repaired := 0
 					for s in world.ships.values():
-						if world.oversees(s.owner):
+						if world.can_operate(s) or world.can_dispatch_service(s):
 							s.hp = float(Hulls.MODELS[s.kind].hp)
 							s.battle.armor = float(Hulls.COMBAT[s.kind].armor)
 							repaired += 1
@@ -1326,6 +1358,12 @@ func _dispatch_inner(action: String, args: Dictionary) -> Dictionary:
 			if moved == 0:
 				return failure("crew_rejected")
 			return success({"moved":moved})
+		"hire_captain":
+			var id := integer(args,"ship",0,1,2147483647)
+			if not Economy.hire_remote_captain(world,id):
+				return failure("captain_unavailable","需有调度权的空缺船位和 ¢85 招募费。")
+			show_service_ship(id)
+			return success({"ship":id, "captain":world.ships[id].captain})
 		"assign_ship":
 			if not Economy.assign(world,integer(args,"ship",-1,1,2147483647),integer(args,"person",-1,1,2147483647),str(args.get("kind","贸易")),integer(args,"source",0,0,2147483647),integer(args,"target",0,0,2147483647)):
 				return failure("assign_rejected")
@@ -1508,12 +1546,21 @@ func _dispatch_inner(action: String, args: Dictionary) -> Dictionary:
 				return failure("wait_restricted_locked", "交战锁定中不可等待跳过天数")
 			var wait_days := integer(args, "days", 1, 1, 180)
 			var start_d: int = world.day
+			var waiting_actor: int = world.player
+			var trip: Dictionary = world.passenger_trip(world.active())
 			for _d in range(wait_days):
 				if world.attention or world.succession:
 					break
 				world.tick(1)
+				if world.player != waiting_actor or (not trip.is_empty() and not world.active().has("transit_ship")):
+					break
 			game.refresh()
-			return success({"days_elapsed": world.day - start_d, "day": world.day, "stopped": "attention" if (world.attention or world.succession) else "completed"})
+			var outcome := {"days_elapsed": world.day - start_d, "day": world.day, "stopped": "attention" if (world.attention or world.succession) else "completed"}
+			if world.player == waiting_actor and not trip.is_empty() and not world.active().has("transit_ship") and int(world.active().get("loc",0)) > 0:
+				outcome.stopped = "disembarked"
+				outcome.ship = trip.ship
+				outcome.port = world.active().loc
+			return success(outcome)
 		"depart":
 			if vessel.is_empty() or vessel.dock == 0:
 				return failure("not_docked")
@@ -1622,11 +1669,17 @@ func _dispatch_inner(action: String, args: Dictionary) -> Dictionary:
 				return failure("invalid_fare")
 			var bres := Economy.board_passenger(world, world.player, lship, ldest, fare)
 			if not bres.get("ok", false):
-				return failure(str(bres.get("reason", "board_liner_failed")))
+				return failure(str(bres.get("reason", "board_liner_failed")),str(bres.get("reason", "")))
+			watch_station_ui("港口", "", "")
+			game.refresh()
 			return success(bres)
 		"disembark_liner":
+			var carrier := int(world.active().get("transit_ship",0))
 			if not Economy.disembark_passenger(world, world.player):
-				return failure("not_on_docked_liner")
+				return failure("not_on_docked_liner","需在所乘客船靠港时下船。")
+			watch_station_ui("港口","welcome","")
+			game.refresh()
+			return success({"ship":carrier, "port":world.active().loc})
 		"assign_passenger_liner":
 			var pship := integer(args, "ship", 0, 1, 2147483647)
 			if pship <= 0:
@@ -1634,7 +1687,8 @@ func _dispatch_inner(action: String, args: Dictionary) -> Dictionary:
 			var proute: Array = args.get("route", []) if args.get("route", []) is Array else []
 			var pres := Economy.assign_passenger_liner(world, pship, proute)
 			if not pres.get("ok", false):
-				return failure(str(pres.get("reason", "assign_passenger_liner_failed")))
+				return failure(str(pres.get("reason", "assign_passenger_liner_failed")),str(pres.get("reason", "")))
+			show_service_ship(pship)
 			return success(pres)
 		"assign_contractor":
 			var cship := integer(args, "ship", 0, 1, 2147483647)
@@ -1643,7 +1697,8 @@ func _dispatch_inner(action: String, args: Dictionary) -> Dictionary:
 			var chome := integer(args, "home_port", 0, 0, 2147483647)
 			var cres: Dictionary = world.ConstructionContract.assign_contractor(world, cship, maxi(0, chome))
 			if not cres.get("ok", false):
-				return failure(str(cres.get("reason", "assign_contractor_failed")))
+				return failure(str(cres.get("reason", "assign_contractor_failed")),str(cres.get("reason", "")))
+			show_service_ship(cship)
 			return success(cres)
 		"group":
 			var auto: Variant = args.get("toggle_auto",false)
@@ -1677,6 +1732,30 @@ func _dispatch_inner(action: String, args: Dictionary) -> Dictionary:
 				return failure("unknown_target")
 			var sent: int = game.flight.issue(order,target)
 			return success({"ships":sent}) if sent > 0 else failure("order_rejected")
+		"assault_station":
+			var port := integer(args,"port",0,1,2147483647)
+			var contract: Variant = args.get("mercenary",false)
+			if bound_actor_id != 0 or not contract is bool or not game.hud.attack(port,contract):
+				return failure("station_assault_rejected",game.notice_text)
+			var st: Dictionary = world.ports[port]
+			return success({"port":port,"message":game.notice_text,"defense_targets":st.get("assault",{}).get("nodes",[]),"owner":st.owner,"flag":st.flag})
+		"station_armament","refit_station_module":
+			var port := integer(args,"port",world.active().loc,1,2147483647)
+			var st: Dictionary = world.ports.get(port,{})
+			if st.is_empty() or int(world.active().loc) != port:
+				return failure("not_at_port","须先抵达该站。")
+			var module := integer(args,"module",-1,-1,1000)
+			var slot := integer(args,"slot",-1,-1,1000)
+			if module < -1 or slot < -1:
+				return failure("invalid_module_slot")
+			var info: Dictionary
+			if action == "station_armament":
+				info = world.StationArmament.inspect(world,st,module,slot)
+			elif args.get("weapon") is String:
+				info = world.StationArmament.refit(world,st,module,slot,args.weapon,args.get("expected_current"))
+			else:
+				return failure("invalid_weapon")
+			return success(info) if info.ok else failure("station_armament_rejected",info.reason)
 		"attack_target":
 			var id := integer(args,"target",0,1,2147483647)
 			return success({"target":id}) if visible_target(vessel,id) and game.flight.attack_target(id) else failure("unknown_target")
@@ -1733,7 +1812,10 @@ func _dispatch_inner(action: String, args: Dictionary) -> Dictionary:
 				return failure("apply_manager_rejected")
 		"disembark":
 			if not world.disembark():
-				return failure("disembark_rejected")
+				return failure("disembark_rejected","请先驾驶旗舰靠港。")
+			watch_station_ui("港口","welcome","")
+			game.refresh()
+			return success({"ship":vessel.get("id",0), "port":world.active().loc})
 		"buy_station_ship":
 			var port_id := integer(args, "port", world.active().get("loc", 0), 1, 2147483647)
 			var kind := Hulls.kind_for_id(str(args.get("hull_id", ""))) if args.has("hull_id") else integer(args, "model", -1, 0, Hulls.MODELS.size() - 1)

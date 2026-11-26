@@ -74,8 +74,7 @@ func begin(ship_count: int, delta: float) -> void:
 		group.views.clear()
 		group.count = 0
 
-func add_vessel(view: ShipVisual) -> void:
-	var ship: Dictionary = view.ship
+func add_shield(ship: Dictionary, center: Vector2, radius: float, color: Color) -> void:
 	var state: Dictionary = ship.battle
 	if state.shield and state.get("shield_arc_live", 0.0) > 0.01:
 		if shield_count == 0:
@@ -84,11 +83,16 @@ func add_vessel(view: ShipVisual) -> void:
 		var facing: float = state.shield_offset
 		var hit := angle_difference(facing, float(state.get("shield_hit_angle",0.0)))
 		shields.multimesh.set_instance_transform_2d(shield_count, Transform2D(ship.heading + facing,
-			Vector2.ONE * view.shield_radius, 0.0, view.last_pose * view.shield_center))
-		shields.multimesh.set_instance_color(shield_count, view.shield_color)
+			Vector2.ONE * radius, 0.0, center))
+		shields.multimesh.set_instance_color(shield_count, color)
 		shields.multimesh.set_instance_custom_data(shield_count, Color(state.shield_arc_live / TAU,
 			hit / TAU + 0.5, state.get("shield_flash",0.0), clampf(Battle.fraction(ship),0.0,1.0)))
 		shield_count += 1
+
+func add_vessel(view: ShipVisual) -> void:
+	var ship: Dictionary = view.ship
+	var state: Dictionary = ship.battle
+	add_shield(ship,view.last_pose * view.shield_center,view.shield_radius,view.shield_color)
 	if state.vent:
 		if jet_count == 0:
 			reserve(steam.multimesh, ship_capacity * 2)

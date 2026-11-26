@@ -270,7 +270,7 @@ static func sign_peace(world, proposer: int, defender: int, annex_ports: Array =
 		var port_id := int(pid)
 		var st: Dictionary = world.ports.get(port_id, {})
 		if not st.is_empty():
-			world.Politics.conquer(world, port_id, proposer)
+			world.Politics.conquer(world, port_id, proposer, 0, true)
 			_reward_war_merit(world, proposer, port_id)
 			annexed_names.append(st.name)
 		occupied.erase(port_id)
