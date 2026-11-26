@@ -319,8 +319,9 @@ func field_repair() -> bool:
 		Battle.ensure_state(ship)
 		var model: Dictionary = Hulls.MODELS[ship.kind]
 		var max_hp := float(model.hp)
-		var max_armor := float(model.armor)
+		var max_armor := float(Hulls.COMBAT[ship.kind].armor)
 		var eff := Hulls.crew_efficiency(ship)
+		var ship_used := 0
 		for tier in tiers:
 			var ware: int = tier[0]
 			var cap_ratio: float = tier[1]
@@ -329,13 +330,14 @@ func field_repair() -> bool:
 			while int(vessel.cargo[ware]) > 0 and (ship.hp < max_hp * cap_ratio - 0.5 or ship.battle.armor < max_armor * cap_ratio - 0.5):
 				vessel.cargo[ware] -= 1
 				used[ware] += 1
+				ship_used += 1
 				var dh := minf(hp_per_unit, maxf(0.0, max_hp * cap_ratio - float(ship.hp)))
 				var da := minf(armor_per_unit, maxf(0.0, max_armor * cap_ratio - float(ship.battle.armor)))
 				ship.hp += dh
 				Battle.Defenses.repair_armor(ship, da)
 				hull_repaired += dh
 				armor_repaired += da
-		if used[Economy.Industry.Ware.HULL_PARTS] == 0 and used[Economy.Industry.Ware.ALLOY] == 0 and used[Economy.Industry.Ware.SCRAP] == 0:
+		if ship_used == 0:
 			var emergency_hp := minf(maxf(18.0, max_hp * 0.22) * eff, maxf(0.0, max_hp * 0.45 - float(ship.hp)))
 			var emergency_armor := minf(maxf(12.0, max_armor * 0.20) * eff, maxf(0.0, max_armor * 0.40 - float(ship.battle.armor)))
 			if emergency_hp > 0.5 or emergency_armor > 0.5:
@@ -656,6 +658,8 @@ func drive_ai(other: Dictionary, lead: Dictionary, delta: float, missiles: Varia
 	other.locked = enemy_id != 0
 	if enemy_id == 0:
 		state.ai = "护卫舰位" if ally else "巡航"
+		if state.system_time > 0.0 and state.active_profile.get("toggle", false):
+			Battle.system(world, other, Vector2.from_angle(other.heading))
 		Battle.shield(other, false)
 		if ally:
 			var side := -1.0 if int(other.id) % 2 == 0 else 1.0
@@ -714,7 +718,6 @@ func _engage_target(other: Dictionary, foe: Dictionary, delta: float) -> void:
 					nearest_threat = dist_sq
 					threat_pos = projectile.pos
 	var lateral := axis.orthogonal() * (-1.0 if int(other.id) % 2 == 0 else 1.0)
-	var separation := _ai_separation(world, other)
 	state.ai = mode
 	var cloak: bool = Hulls.MODELS[other.kind].get("phase",false)
 	var anticipating: bool = not cloak and Hulls.MODELS[other.kind].get("shield_type","FRONT") != "NONE" and weapon_threat(foe,other)
@@ -722,14 +725,19 @@ func _engage_target(other: Dictionary, foe: Dictionary, delta: float) -> void:
 	var guard: bool = imminent if cloak else state.get("ai_shield_hold",0.0) > 0
 	var shield_aim: Vector2 = threat_pos if threat_pos.is_finite() else foe.pos
 	if mode in ["降盾散热","脱离交战"]:
-		if state.system_cd <= 0.0 and state.system_time <= 0.0:
+		if state.system_time > 0.0 and state.active_profile.get("toggle", false):
+			var active_def: bool = state.active_profile.get("effect", "") in ["flare", "flak", "fortress", "damper", "screen", "extract", "blink", "thrust", "impulse", "recall"]
+			var active_cap := 0.85 if active_def else 0.58
+			if Battle.fraction(other) >= active_cap or not Battle.Abilities.ai_use(other, foe, gap.length(), imminent, false):
+				Battle.system(world, other, -axis)
+		elif state.system_cd <= 0.0 and state.system_time <= 0.0:
 			var eff: String = Battle.Abilities.profile(other).effect
 			if eff == "extract" or (eff in ["flare", "flak", "fortress", "damper", "screen", "blink", "thrust", "impulse"] and Battle.Abilities.ai_use(other, foe, gap.length(), imminent, false)):
 				Battle.system(world, other, -axis, foe.pos, foe.id)
 		Battle.shield(other, guard and Battle.fraction(other) < 0.74, shield_aim)
 		if not state.shield and not imminent and gap.length() > 210.0 and Battle.fraction(other) > 0.38 and Battle.vent(other):
 			world.combat_event("vent", other.pos, other.system)
-		maneuver(other, -axis + lateral * 0.25 + separation, delta, gap.angle())
+		maneuver(other, -axis + lateral * 0.25, delta, gap.angle())
 		return
 	var desired := Battle.preferred_range(other, p)
 	var dist := gap.length()
@@ -738,45 +746,45 @@ func _engage_target(other: Dictionary, foe: Dictionary, delta: float) -> void:
 	if tactic == 0:
 		# 激进突击：贴近主炮射程并保持侧移压迫，不后退放风筝
 		state.ai = "激进突击"
-		move = (axis * 0.95 + lateral * 0.25 if dist > desired * 0.65 else lateral * 0.65 + axis * 0.25) + separation
+		move = axis * 0.95 + lateral * 0.25 if dist > desired * 0.65 else lateral * 0.65 + axis * 0.25
 	elif tactic == 1:
 		# 稳健接战：保持有效射程内绕飞交火
 		state.ai = "稳健接战"
 		var radial := 0.45 if dist > desired * 0.95 else (-0.25 if dist < desired * 0.50 else 0.0)
-		move = lateral * 0.68 + axis * radial + separation
+		move = lateral * 0.68 + axis * radial
 	elif tactic == 2:
 		# 游击拉扯：远距风筝拉扯
 		state.ai = "游击拉扯"
 		var radial := 0.24 if dist > desired * 0.95 else (-0.65 if dist < desired * 0.78 else 0.0)
-		move = lateral * 0.72 + axis * radial + separation
+		move = lateral * 0.72 + axis * radial
 	elif tactic == 3:
 		# 护盾抗线：稳步接敌，减少横移，高幅能持盾
 		state.ai = "护盾抗线"
 		var radial := 0.40 if dist > desired else (-0.15 if dist < desired * 0.45 else 0.0)
-		move = axis * radial + lateral * 0.32 + separation
+		move = axis * radial + lateral * 0.32
 	elif tactic == 4:
 		# 避战撤离：拉开距离并及早散热
 		state.ai = "避战撤离"
-		move = -axis * 0.90 + lateral * 0.35 + separation
+		move = -axis * 0.90 + lateral * 0.35
 	else:
 		var radial := 0.42 if dist > desired * 0.92 else (-0.30 if dist < desired * 0.52 else 0.0)
-		move = (axis * 0.92 + lateral * 0.26 if mode == "压进" else lateral * 0.72 + axis * radial) + separation
+		move = axis * 0.92 + lateral * 0.26 if mode == "压进" else lateral * 0.72 + axis * radial
 	if tactic != 4 and foe.hp < Hulls.MODELS[foe.kind].hp * 0.28 and Battle.fraction(other) < 0.78:
 		state.ai = "追击补刀"
-		move = axis * 0.96 + lateral * 0.22 + separation
+		move = axis * 0.96 + lateral * 0.22
 	maneuver(other, move, delta, face_angle)
 	var shield_cap: float = 0.88 if tactic == 3 else [0.85, 0.76, 0.62, 0.48, 0.36][p]
 	Battle.shield(other, guard and Battle.fraction(other) < shield_cap+ (0.06 if state.shield else 0.0),shield_aim)
-	if state.system_cd <= 0.0:
-		var ability_profile := Battle.Abilities.profile(other)
-		var is_defensive: bool = ability_profile.effect in ["flare", "flak", "fortress", "damper", "screen", "extract", "blink", "thrust", "impulse", "recall"]
-		var flux_limit := 0.85 if is_defensive else 0.58
-		if Battle.fraction(other) < flux_limit:
-			var recipient: Dictionary = Battle.Abilities.lash_recipient(world, other, foe) if ability_profile.effect == "lash" else foe
-			if Battle.Abilities.ai_use(other, recipient, other.pos.distance_to(recipient.pos), imminent, mode == "压进") and state.system_time <= 0.0:
-				Battle.system(world, other, axis, recipient.pos, recipient.id)
-			elif state.system_time > 0.0 and state.active_profile.get("toggle", false) and not Battle.Abilities.ai_use(other, foe, dist, imminent, mode == "压进"):
-				Battle.system(world, other, axis)
+	var ability_profile := Battle.Abilities.profile(other)
+	var is_defensive: bool = ability_profile.effect in ["flare", "flak", "fortress", "damper", "screen", "extract", "blink", "thrust", "impulse", "recall"]
+	var flux_limit := 0.85 if is_defensive else 0.58
+	if state.system_time > 0.0 and state.active_profile.get("toggle", false):
+		if Battle.fraction(other) >= flux_limit or not Battle.Abilities.ai_use(other, foe, dist, imminent, mode == "压进"):
+			Battle.system(world, other, axis)
+	elif state.system_cd <= 0.0 and state.system_time <= 0.0 and Battle.fraction(other) < flux_limit:
+		var recipient: Dictionary = Battle.Abilities.lash_recipient(world, other, foe) if ability_profile.effect == "lash" else foe
+		if Battle.Abilities.ai_use(other, recipient, other.pos.distance_to(recipient.pos), imminent, mode == "压进"):
+			Battle.system(world, other, axis, recipient.pos, recipient.id)
 	var fire_cap: float = [0.86, 0.78, 0.68, 0.58, 0.48][p]
 	if Battle.fraction(other) < fire_cap:
 		Battle.auto_fire(world, other, foe)

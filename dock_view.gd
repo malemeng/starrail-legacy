@@ -400,6 +400,36 @@ func sidebar(body: Node, station: Dictionary) -> void:
 		UIKit.action_button(nav_row, "船坞", func(): mode = "yard"; game.refresh(), "ghost", true, "", true)
 		UIKit.action_button(nav_row, "改装", func(): mode = "refit"; game.refresh(), "ghost", true, "", true)
 		UIKit.action_button(nav_row, game.key_caption("离港","E"), game.flight.dock, "default", not vessel.is_empty(), "未登舰", true)
+		if vessel.is_empty():
+			var liners: Array = Economy.docked_liners(world, station.id)
+			var lcard := UIKit.card(body, UIKit.GOLD)
+			if liners.is_empty():
+				game.hud.hint(lcard, "公共客运：当前无靠港客船，请推进时间等待班船进港。")
+			else:
+				for liner: Dictionary in liners:
+					var route: Array = liner.job.get("route", [])
+					var pax_n: int = liner.get("passengers", []).size()
+					var cap: int = Economy.passenger_capacity(liner)
+					game.hud.hint(lcard, "公共客船 #%d（载客 %d/%d）" % [liner.id, pax_n, cap])
+					var dest_ids: Array[int] = []
+					var fares: Array[int] = []
+					var dest_labels: Array = []
+					for pid in route:
+						var id := int(pid)
+						if id != station.id and world.ports.has(id):
+							dest_ids.append(id)
+							var fare := Economy.passenger_fare(world, actor, liner, id)
+							fares.append(fare)
+							dest_labels.append("%s (¢%d)" % [world.ports[id].name, fare])
+					if not dest_ids.is_empty():
+						var lrow: HBoxContainer = game.hbox(lcard)
+						var pick = UIKit.remembered_choice(lrow, "liner_%d" % liner.id, dest_labels)
+						pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+						UIKit.action_button(lrow, "购票乘船", func():
+							var index := clampi(pick.selected, 0, dest_ids.size() - 1)
+							var d_id := dest_ids[index]
+							var res := Economy.board_passenger(world, world.player, liner.id, d_id, fares[index])
+							game.hud.result(bool(res.get("ok", false)), "已购票登船，时间推进后随客船前往 %s。" % world.ports[d_id].name, String(res.get("reason", ""))), "primary", pax_n < cap, "本班客船已满员")
 	match mode:
 		"market":
 			game.hud.market(body, station)

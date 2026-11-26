@@ -633,7 +633,7 @@ func battle_landmarks(world, system: Dictionary) -> void:
 	if in_frame(mine):
 		draw_circle(mine, 5, GOLD)
 	var target: Dictionary = world.ships.get(game.selected_target,{})
-	if not target.is_empty() and Battle.available(target, world.ride().system):
+	if not target.is_empty() and Battle.available(target, system.id):
 		var at := screen(target.pos)
 		draw_arc(at, float(Battle.Defenses.geometry(target.kind).radius)*zoom+4,0,TAU,24,GOLD,1.0)
 	if game.waypoint_live:

@@ -17,7 +17,9 @@ func _initialize() -> void:
 
 func run() -> void:
 	var g = SCENE.instantiate()
+	g.test_profile = true
 	get_root().add_child(g)
+	g.show_creator()
 	g.start_game()
 	var human_player: int = g.world.player
 

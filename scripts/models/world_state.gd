@@ -228,6 +228,12 @@ static func decode(data: Dictionary, wares: int) -> Dictionary:
 			return {}
 		if not ship.get("captain") is int or (ship.captain != 0 and not copy.people.has(ship.captain)):
 			return {}
+		if ship.has("passengers"):
+			var clean_pax: Array = []
+			for pid in ship.passengers:
+				if copy.people.has(pid) and copy.people[pid].get("alive", false):
+					clean_pax.append(int(pid))
+			ship.passengers = clean_pax
 		for field in ["operating_area","next_operating_area"]:
 			if not ship.has(field):
 				continue

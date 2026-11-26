@@ -583,6 +583,8 @@ static func point_defense(world, vessel: Dictionary, incoming: Variant = null, a
 			vessel.battle.cooldowns[index] = spec.cool*float(modifier.get("rate",1.0)) / Hulls.crew_efficiency(vessel)
 			world.combat_event("intercept", best.pos, vessel.system, (best.pos - muzzle).normalized())
 			add_flux(world, vessel, spec.flux*float(modifier.get("weapon_flux",1.0)))
+			if not ready(vessel):
+				break
 
 const COLLISION_CELL := 64.0
 static var collision_engine: RefCounted
@@ -796,9 +798,14 @@ static func project(world, system_id: int, delta: float) -> void:
 				if blast.ordnance == "constructor":
 					native = prepare_collision(world,system_id)
 					local = {} if native else spatial_buckets(world,system_id)
-				elif blast.ordnance == "mote" and world.ships.has(blast.target):
-					sync_collision_body(world.ships[blast.target])
+				elif blast.ordnance == "mote":
+					if world.ships.has(blast.target):
+						sync_collision_body(world.ships[blast.target])
+					else:
+						collision_engine.remove_body(int(blast.target))
 			if blast.life<=0 or blast.hp<=0: world.projectiles.remove_at(index)
+			if world.succession or world.attention:
+				return
 			continue
 		var previous: Vector2 = blast.pos
 		if blast.get("mine",false):

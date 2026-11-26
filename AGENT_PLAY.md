@@ -39,6 +39,8 @@ $session = Join-Path $env:TEMP ('starrail-agent-' + [Guid]::NewGuid().ToString('
 | `new_game` | `seed`、`name`、`noble` 可选；也可传 `systems`、`factions` 和 `role`（`captain` / `independent_manager` / `employed_manager`） |
 | `waypoint` | `kind` 可选 `gravity`、`mine`、`port`、`system`、`point`、`planet`（登陆）、`survey`（勘测）或 `construction_orbit`（建站轨道）。港口和星系使用 `target` ID，后三种使用 `system.planets[].index` 作为 `target`，坐标航点使用 `pos:[x,y]`。港口和行星航点会随天体移动。 |
 | `hire_builder`、`cancel_builder` | 到港后从该港的 `builder_offer` 读取现货和项目服务费。签约可传 `expected_fee` 锁定报价，通过 `state.construction_contract` 跟踪工程舰。 |
+| `board_liner`、`disembark_liner` | 离开自己驾驶的船后，从 `state.passenger_liners` 选择靠港客船和目的港。登船时传 `ship`、`dest` 和该站报价 `fare`。报价变化时会退回请求。抵达目的港会自动下船，也可在停靠期间提前下船。 |
+| `assign_passenger_liner`、`assign_contractor` | 用 `ship` 指定由 NPC 船长执掌的自有或公司舰船。客运可传经停港 ID 数组 `route`，工程舰可传母港 `home_port`。 |
 | `deploy_station`、`donate_materials` | 在行星施工轨道发送 `deploy_station`，传产业编号 `module`。自驾或雇来的工程巡洋舰须已到场。得到工地的 `port` 后靠泊，发送 `donate_materials` 从旗舰货舱卸入所需材料。 |
 | `found_planet_port` | 在已勘测的未开发行星着陆点提交 `module`，建立地表或浮空港口项目。 |
 | `financial_report` | 可传 `days`（1–90，默认 30）。返回舰队与空间站的实际收入、支出和净额，以及各项资产明细。空间站另列公开市场售货、收货成交额。 |

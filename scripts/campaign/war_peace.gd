@@ -230,12 +230,19 @@ static func _reward_war_merit(world, winner: int, port_id: int) -> void:
 	var st: Dictionary = world.ports.get(port_id, {})
 	if st.is_empty() or int(st.flag) != winner:
 		return
+	var busy_managers := {}
+	for other_st: Dictionary in world.ports.values():
+		var mgr := int(other_st.get("manager", 0))
+		if mgr != 0:
+			busy_managers[mgr] = true
 	var best_person := 0
 	var best_merit := 14
 	var leader := int(world.factions.get(winner, {}).get("leader", 0))
 	for pid in world.people:
 		var cand: Dictionary = world.people[pid]
-		if not cand.alive or int(cand.flag) != winner or pid == leader:
+		if not cand.alive or int(cand.flag) != winner or pid == leader or world.Politics.age(world, cand) < 18:
+			continue
+		if pid != world.player and (int(cand.get("ship", 0)) != 0 or busy_managers.has(pid)):
 			continue
 		var m := int(cand.get("merit", 0))
 		if m > best_merit:
@@ -244,6 +251,8 @@ static func _reward_war_merit(world, winner: int, port_id: int) -> void:
 	if best_person != 0:
 		st.manager = best_person
 		world.people[best_person].employer = leader
+		if int(world.people[best_person].get("ship", 0)) == 0:
+			world.people[best_person].loc = port_id
 		if best_person == world.player:
 			world.event("战功封赏：因战功卓著，%s 将新占领的 %s 交由你掌管！" % [world.name_of(leader), st.name])
 
@@ -355,7 +364,14 @@ static func daily(world) -> void:
 		var ex_a := exhaustion(world, key.x, key.y)
 		var ex_b := exhaustion(world, key.y, key.x)
 		var diff := absf(float(pact.score_x) - float(pact.score_y))
-		var ready: bool = (ex_a >= 75.0 or ex_b >= 75.0) or (diff >= 70.0 and days >= 60) or (days >= 260 and ex_a >= 45.0 and ex_b >= 45.0)
+		var la: Dictionary = world.people.get(int(fa.get("leader", 0)), {})
+		var lb: Dictionary = world.people.get(int(fb.get("leader", 0)), {})
+		var bold_avg := (float(la.get("personality", {}).get("boldness", 0)) + float(lb.get("personality", {}).get("boldness", 0))) * 0.5
+		var ex_limit := clampf(75.0 + bold_avg * 0.15, 60.0, 90.0)
+		if not la.is_empty() and not lb.is_empty():
+			if world.Politics.kin(world, int(la.id), int(lb.id)) or world.Politics.opinion(world, int(la.id), int(lb.id)) >= 25:
+				ex_limit -= 12.0
+		var ready: bool = (ex_a >= ex_limit or ex_b >= ex_limit) or (diff >= 70.0 and days >= 60) or (days >= 260 and ex_a >= 45.0 and ex_b >= 45.0)
 		if ready:
 			pending_peace.append([key.x, key.y])
 	for pair in pending_peace:

@@ -353,6 +353,10 @@ static func motion(world, port: Dictionary, official: Dictionary, group: Diction
 		return ""
 	var resentment := -int(official.opinions.get(leader.id,0)) + (2-int(leader.legitimacy))*12
 	resentment += mini(40,int(port.shortage)/3) + maxi(0,roundi((port.tax_rate-0.10)*220))
+	var cap_port: Dictionary = world.ports.get(int(group.get("capital", 0)), {})
+	var far_frontier: bool = not cap_port.is_empty() and int(port.id) != int(cap_port.id) and world.distance(int(cap_port.system), int(port.system)) >= 240.0
+	if far_frontier and int(port.shortage) >= 12:
+		resentment += 16
 	if int(leader.get("dread",0)) - (int(official.personality.boldness)+35) >= 15:
 		resentment /= 2
 	if resentment < 30:
@@ -362,7 +366,7 @@ static func motion(world, port: Dictionary, official: Dictionary, group: Diction
 		return "shareholders"
 	if group.regime == 0 and leader.legitimacy <= 1 and (official.noble or official.id == leader.designated_heir):
 		return "claimant"
-	if port.owner == official.id and port.id != group.capital and resentment >= 55:
+	if port.id != group.capital and ((port.owner == official.id and resentment >= 55) or (far_frontier and int(port.shortage) >= 18 and resentment >= 65)):
 		return "independence"
 	return "autonomy"
 
@@ -549,7 +553,10 @@ static func separate(world, flag: int, bloc: Dictionary, war: bool) -> int:
 	var retained: int = world.factions.get(new_flag,{}).get("treasury",0)
 	var former_company: int = world.factions.get(new_flag,{}).get("firm",0)
 	group.treasury -= budget
-	world.factions[new_flag] = {"name":seat.name+"自治同盟","style":group.style,"regime":group.regime,
+	var seat_root: String = world.Politics._clean_realm_root(str(seat.name))
+	var rebel_suffixes := ["自治同盟", "自由阵线", "护宪同盟", "独立邦", "星区义军"]
+	var rebel_title: String = rebel_suffixes[absi(int(seat.id) + int(bloc.candidate)) % rebel_suffixes.size()]
+	world.factions[new_flag] = {"name":seat_root+rebel_title,"style":group.style,"regime":group.regime,
 		"color":group.color,"leader":bloc.candidate,"capital":seat.id,"npc":true,"alive":true,
 		"treasury":budget+retained,"last_war":world.day,"truce_until":world.day+720}
 	if world.firms.has(former_company) and world.Equity.corporate(group.regime):

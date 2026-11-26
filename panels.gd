@@ -1330,6 +1330,15 @@ func assets(body: Node) -> void:
 				result(Economy.lease_ship_to_station(world, ship_id, lease_ports[lease_pick.selected], "站属贸易"), "已租赁给该空间站执行贸易。"))
 			game.button(lease_row, "租给采矿", func():
 				result(Economy.lease_ship_to_station(world, ship_id, lease_ports[lease_pick.selected], "站属采矿"), "已租赁给该空间站执行采矿。"))
+		if owned.id != actor.ship and int(owned.captain) not in [0, world.player]:
+			var svc_row = game.hbox(body)
+			game.button(svc_row, "开通自营客运班线", func():
+				var res: Dictionary = Economy.assign_passenger_liner(world, ship_id)
+				result(bool(res.get("ok", false)), "已开通自营公共客运班线。", String(res.get("reason", ""))))
+			if world.Hulls.can_build_station(owned.kind):
+				game.button(svc_row, "派遣工程承包接单", func():
+					var res: Dictionary = world.ConstructionContract.assign_contractor(world, ship_id)
+					result(bool(res.get("ok", false)), "工程代理人已开始自动承接轨道工程订单。", String(res.get("reason", ""))))
 		if not my_sites.is_empty():
 			var stops_all := routes([])
 			if not stops_all.is_empty():
@@ -1534,6 +1543,7 @@ func powers(body: Node) -> void:
 				var war_row: HBoxContainer = game.hbox(ccard)
 				var war_target = UIKit.remembered_choice(war_row, "firm_wt_%d" % firm_id, flags.map(func(flag): return world.flag_name(flag)))
 				war_target.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				war_target.item_selected.connect(func(_i): game.refresh())
 				var pretext_keys := ["tariff_dispute", "asset_seizure", "privateer_incident"]
 				var pretext_pick = UIKit.remembered_choice(war_row, "firm_pk_%d" % firm_id, ["关税纠纷 (¢1200 / 45日)", "资产纠纷 (¢1800 / 60日)", "袭扰借口 (¢2400 / 30日)"])
 				var sel_flag := int(flags[clampi(war_target.selected, 0, flags.size() - 1)])

@@ -85,6 +85,8 @@ func treasury(world) -> int:
 	var total := 0
 	for group in world.factions.values():
 		total += int(group.treasury)
+	for person in world.people.values():
+		total += int(person.wallet)
 	return total
 
 func run() -> void:

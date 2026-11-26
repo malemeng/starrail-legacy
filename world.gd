@@ -416,6 +416,9 @@ func ship(hull_type: int, owner: int, captain: int, flag: int, system: int, pos:
 func _register_ship(ship_id: int, hull_type: int, owner: int, captain: int, flag: int, system: int, pos: Vector2, at_port: int) -> int:
 	ships[ship_id] = Ship.create(ship_id, hull_type, owner, captain, flag, system, pos,
 		systems[system].pos, at_port, quantities([]))
+	ships[ship_id].built_day = day
+	var yr := 2400 + day / 360
+	ships[ship_id].history = ["%d年 下水服役（%s）" % [yr, flag_name(flag)]]
 	if captain != 0:
 		people[captain].ship = ship_id
 		people[captain].loc = at_port
@@ -748,6 +751,7 @@ func new_game(options: Dictionary) -> bool:
 			ships[vessel_id].job = {"kind":"贸易"}
 	chart(home)
 	PlanetPorts.prepare_producers(self)
+	_setup_passenger_liners(home, deployment)
 	if role_mode == 1:
 		var old_mgr: int = ports[home].manager
 		if old_mgr != 0 and people.has(old_mgr):
@@ -762,7 +766,7 @@ func new_game(options: Dictionary) -> bool:
 		if freighter_kind < 0 and not deployment.traders[0].is_empty():
 			freighter_kind = Hulls.kind_for_reference(deployment.traders[0][0])
 		if freighter_kind >= 0:
-			var fid := ship(freighter_kind, player, trader_cap, NEUTRAL, 0, ports[home].pos, home)
+			var fid := ship(freighter_kind, 0, trader_cap, NEUTRAL, 0, ports[home].pos, home)
 			ships[fid].station_owner = home
 			ships[fid].job = {"kind": "站属贸易", "home_port": home}
 		event("「%s」出任 %s 独立站长（不驾驶飞船），统筹贸易与空间站经营。" % [name_of(player), ports[home].name])
@@ -795,7 +799,7 @@ func new_game(options: Dictionary) -> bool:
 			if sm_kind < 0 and not deployment.traders[factions[target_flag].style].is_empty():
 				sm_kind = Hulls.kind_for_reference(deployment.traders[factions[target_flag].style][0])
 			if sm_kind >= 0:
-				var sm_sid := ship(sm_kind, factions[target_flag].leader, sm_cap, target_flag, ports[assigned_port].system, ports[assigned_port].pos, assigned_port)
+				var sm_sid := ship(sm_kind, 0, sm_cap, target_flag, ports[assigned_port].system, ports[assigned_port].pos, assigned_port)
 				ships[sm_sid].station_owner = assigned_port
 				ships[sm_sid].job = {"kind": "站属贸易", "home_port": assigned_port, "automatic": true, "phase": 0}
 		event("「%s」加入 %s 并受雇出任 %s 站长（不驾驶飞船）。" % [name_of(player), flag_name(target_flag), ports[assigned_port].name])
@@ -804,6 +808,32 @@ func new_game(options: Dictionary) -> bool:
 	if not noble:
 		event("航务局交你一艘通勤工船经营。货物与配装归你，船体可在晨曦自由港船坞买断。")
 	return true
+
+func _setup_passenger_liners(home_port: int, deployment: Dictionary) -> void:
+	var hubs: Array[int] = [home_port]
+	for fid in factions:
+		var cap := int(factions[fid].get("capital", 0))
+		if cap != 0 and ports.has(cap) and cap not in hubs:
+			hubs.append(cap)
+	var default_kind := Hulls.kind_for_reference(str(deployment.get("starter", "beacon_ff")))
+	for hub_id in hubs:
+		var hub: Dictionary = ports.get(hub_id, {})
+		if hub.is_empty() or hub.build != 0 or hub.get("landing_only", false):
+			continue
+		var route: Array[int] = Economy.build_passenger_route(self, hub_id)
+		if route.size() < 2:
+			continue
+		var style := int(factions.get(hub.flag, {}).get("style", 0))
+		var pool: Array = deployment.traders[clampi(style, 0, deployment.traders.size() - 1)]
+		var liner_kind := Hulls.kind_for_reference(pool[0]) if not pool.is_empty() else default_kind
+		if liner_kind < 0:
+			liner_kind = maxi(0, default_kind)
+		var cap_id := random_person(hub.flag, hub_id)
+		var liner_id := ship(liner_kind, 0, cap_id, hub.flag, hub.system, hub.pos, hub_id)
+		ships[liner_id].station_owner = hub_id
+		ships[liner_id].passengers = []
+		ships[liner_id].job = {"kind": "客运", "home_port": hub_id, "route": route, "stop_index": 0, "layover": 1}
+		ships[liner_id].default_behavior = ships[liner_id].job.duplicate(true)
 
 func incorporate(label: String, founder: int, site: int, assign_site: bool = true, reserve_cash: int = 0, vessel: Dictionary = {}) -> int:
 	if not people.has(founder) or not ports.has(site):
@@ -1062,6 +1092,33 @@ func destruction(ship_id: int, killer: int = 0) -> void:
 	if killed != 0:
 		people[killed].ship = 0
 		Politics.die(self, killed, false)
+	var onboard: Array = vessel.get("passengers", []).duplicate()
+	if not onboard.is_empty():
+		var safe_port := 0
+		var sys_ports: Array = systems[vessel.system].ports if vessel.system >= 0 and vessel.system < systems.size() else []
+		for pid in sys_ports:
+			if ports.has(pid) and ports[pid].build == 0 and not hostile(vessel.flag, ports[pid].flag):
+				safe_port = int(pid)
+				break
+		if safe_port == 0 and not systems.is_empty() and not systems[0].ports.is_empty():
+			safe_port = int(systems[0].ports[0])
+		for pax_id in onboard:
+			var pax: Dictionary = people.get(pax_id, {})
+			if pax.is_empty() or not pax.alive:
+				continue
+			pax.erase("transit_ship")
+			pax.erase("travel_dest")
+			pax.loc = safe_port if safe_port != 0 else Politics.landing(self, pax)
+			Society.stress(self, pax, 18)
+			if int(pax_id) == player:
+				event("所乘公共客船遇袭损毁！你乘救生舱迫降在 %s。" % ports[pax.loc].name)
+	if killer != 0 and people.has(killer) and people[killer].alive:
+		var kship: Dictionary = ships.get(people[killer].ship, {})
+		if not kship.is_empty():
+			var hist: Array = kship.get("history", [])
+			if hist.size() < 12:
+				hist.append("%d年 击毁 %s（%s）" % [2400 + day / 360, HULLS[vessel.kind], flag_name(vessel.flag)])
+				kship.history = hist
 	if killer != 0 and people.has(killer) and people[killer].alive and vessel.flag == RAIDERS:
 		var victor: Dictionary = ships.get(people[killer].ship,{})
 		var bounty := maxi(95, roundi(60.0 + float(model.power) * 18.0))

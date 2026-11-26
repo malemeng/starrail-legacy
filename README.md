@@ -4,9 +4,11 @@
 
 《星轨遗产》是一款中文单人太空沙盒。你亲自驾驶旗舰，也要为燃料、货物和下一艘船付钱。等这一代船长老去，子女还能接过家业，在同一个星区继续生活。
 
-[下载 Windows 64 位试玩版（ZIP）](https://github.com/malemeng/starrail-legacy/releases/latest/download/StarrailLegacy-Windows-x64.zip) · 完整解压，保留同目录的 `fleet_collision.dll`，双击 `StarrailLegacy.exe` 即可离线游玩。
+[下载 Windows 64 位试玩版 0.1.6（ZIP）](https://github.com/malemeng/starrail-legacy/releases/download/android-0.1.6/StarrailLegacy-Windows-x64.zip) · 完整解压，保留同目录的 `fleet_collision.dll`，双击 `StarrailLegacy.exe` 即可离线游玩。
 
-[下载安卓横屏试玩版 0.1.3（APK）](https://github.com/malemeng/starrail-legacy/releases/download/android-0.1.3/StarrailLegacy-Android.apk) · 适用于 Android 7.0 及以上的 ARM64 手机，支持触屏驾驶、外部模型托管和多 Agent 竞技场。列表支持从按钮和下拉选项上起手滑动，轻点即可操作。已有安卓试玩版可直接覆盖安装，保留存档。
+[下载安卓横屏试玩版 0.1.6（APK）](https://github.com/malemeng/starrail-legacy/releases/download/android-0.1.6/StarrailLegacy-Android.apk) · 适用于 Android 7.0 及以上的 ARM64 手机，支持触屏驾驶、外部模型托管和多 Agent 竞技场。列表支持从按钮和下拉选项上起手滑动，轻点即可操作。
+
+安卓 0.1.6 与 0.1.3 使用相同的正式签名，可从 0.1.3 覆盖升级。0.1.4 和 0.1.5 使用另一份签名，安卓会拒绝覆盖安装。卸载会清除应用内存档，有进度需要保留的玩家请保留原安装。
 
 ## 实机演示
 

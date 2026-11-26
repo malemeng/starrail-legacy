@@ -126,29 +126,32 @@ static func population_day(world, moved: Dictionary = {}) -> void:
 			var wild_sys: bool = world.systems[station.system].get("wild", false)
 			var pop_floor := mini(station.pop, 25 if wild_sys else 120) if station.pop < 25 else (25 if wild_sys else 120)
 			var refugees := mini(maxi(0, station.pop - pop_floor), maxi(1, floori(station.pop * 0.03)))
-			if refugees <= 0:
-				continue
-			station.pop -= refugees
-			var refuge: Dictionary = {}
-			var nearest := INF
-			for other in world.ports.values():
-				if other.id == station.id or other.build > 0 or other.stability < 65.0 or other.pop >= other.pop_cap or world.hostile(station.flag, other.flag):
-					continue
-				var gap: float = world.distance(station.system,other.system)
-				if gap < nearest:
-					nearest = gap
-					refuge = other
-			if not refuge.is_empty():
-				refuge.pop = mini(refuge.pop_cap, refuge.pop + refugees)
-			if station.shortage == 12 and refugees > 0:
-				world.event("%s 断供，%s 位居民撤离。" % [station.name, refugees])
+			if refugees > 0:
+				station.pop -= refugees
+				var refuge: Dictionary = {}
+				var nearest := INF
+				for other in world.ports.values():
+					if other.id == station.id or other.build > 0 or other.stability < 65.0 or other.pop >= other.pop_cap or world.hostile(station.flag, other.flag):
+						continue
+					var gap: float = world.distance(station.system,other.system)
+					if gap < nearest:
+						nearest = gap
+						refuge = other
+				if not refuge.is_empty():
+					refuge.pop = mini(refuge.pop_cap, refuge.pop + refugees)
+				if station.shortage <= 27:
+					world.event("%s 断供，%s 位居民撤离。" % [station.name, refugees])
 		if station.stability <= 16.0 and station.shortage == 30:
 			world.event("%s 爆发补给骚乱，站务委员会要求自治。" % station.name)
 		station.tax_remainder += station.pop * station.tax_rate * station.stability / 8500.0
 		var taxes := floori(station.tax_remainder)
 		station.tax_remainder -= taxes
 		if taxes > 0:
-			world.Treasury.post(world,station,taxes,"居民税收")
+			var faction_cut := floori(taxes * 0.25) if int(station.flag) >= 0 and world.factions.get(station.flag, {}).get("alive", false) else 0
+			if faction_cut > 0:
+				world.factions[station.flag].treasury += faction_cut
+			if taxes - faction_cut > 0:
+				world.Treasury.post(world,station,taxes - faction_cut,"居民税收")
 		if world.day % 6 == 0 and int(station.manager) != 0 and int(station.manager) != int(station.owner):
 			var mgr: Dictionary = world.people.get(station.manager, {})
 			if mgr.get("alive", false):
@@ -721,7 +724,9 @@ static func hire_remote_captain(world, ship_id: int, kind: String = "停泊待�
 	elif kind in ["站属贸易", "站属采矿"] and world.ports.has(home_port):
 		vessel.job = {"kind":kind,"home_port":home_port,"automatic":true,"label":kind,"phase":0}
 	else:
-		var dock_port: int = home_port if world.ports.has(home_port) else (vessel.dock if vessel.dock != 0 else world.systems[vessel.system].ports[0])
+		var sys_ports: Array = world.systems[vessel.system].ports
+		var fallback_port: int = int(sys_ports[0]) if not sys_ports.is_empty() else (int(world.systems[0].ports[0]) if not world.systems[0].ports.is_empty() else int(world.ports.keys()[0]))
+		var dock_port: int = home_port if world.ports.has(home_port) else (vessel.dock if vessel.dock != 0 else fallback_port)
 		vessel.job = {"kind":"停泊待命","source":dock_port,"system":world.ports[dock_port].system}
 	vessel.default_behavior = vessel.job.duplicate(true)
 	world.event("%s 赴任%s船长，任务：%s。" % [officer.name, world.HULLS[vessel.kind], kind])
@@ -771,9 +776,17 @@ static func buy_and_assign_to_station(world, port_id: int, kind: int, duty_kind:
 	if new_id == 0:
 		return 0
 	var vessel: Dictionary = world.ships[new_id]
+	var busy_roles := {}
+	for f in world.factions.values():
+		if f.get("alive", false):
+			busy_roles[int(f.get("leader", 0))] = true
+	for st in world.ports.values():
+		busy_roles[int(st.get("manager", 0))] = true
+	for fm in world.firms.values():
+		busy_roles[int(fm.get("director", 0))] = true
 	var candidate := 0
 	for p in world.people.values():
-		if p.alive and int(p.loc) == port_id and int(p.ship) == 0 and int(p.employer) == 0 and int(p.id) != world.player:
+		if p.alive and int(p.loc) == port_id and int(p.ship) == 0 and int(p.employer) == 0 and int(p.id) != world.player and not busy_roles.has(int(p.id)) and world.Politics.age(world, p) >= 18:
 			candidate = int(p.id)
 			break
 	if candidate == 0:
@@ -846,11 +859,12 @@ static func end_ship_lease(world, ship_id: int) -> bool:
 	var vessel: Dictionary = world.ships.get(ship_id, {})
 	if vessel.is_empty() or not vessel.has("lease") or not world.oversees(vessel.owner):
 		return false
+	var lease_port := int(vessel.lease.get("port", vessel.dock))
 	vessel.erase("lease")
 	if vessel.get("order_queue", []).is_empty():
 		release_reservation(world, vessel)
 		vessel.travel = {}
-	vessel.job = {"kind":"停泊待命","automatic":false}
+	vessel.job = {"kind":"停泊待命","source":lease_port,"automatic":false}
 	vessel.default_behavior = vessel.job.duplicate(true)
 	world.event("已终止 %s 的空间站租赁，飞船已收回。" % world.HULLS[vessel.kind])
 	return true
@@ -875,11 +889,12 @@ static func daily_leases(world) -> void:
 			world.credit(lessor, rent)
 			world.Finances.record(world, lessor, home, "飞船租金", rent, false, false)
 		else:
+			var lease_port := int(lease.get("port", vessel.dock))
 			vessel.erase("lease")
 			if vessel.get("order_queue", []).is_empty():
 				release_reservation(world, vessel)
 				vessel.travel = {}
-			vessel.job = {"kind":"停泊待命","automatic":false}
+			vessel.job = {"kind":"停泊待命","source":lease_port,"automatic":false}
 			vessel.default_behavior = vessel.job.duplicate(true)
 			if not home.is_empty():
 				world.event("%s 因资金或状态原因终止了 %s 的租赁。" % [home.name, world.HULLS[vessel.kind]])
@@ -914,7 +929,16 @@ static func manager(world, port_id: int, person_id: int) -> bool:
 
 ## A public port with a persistent shortage can fund a local production line.
 static func plan_provisions(world, station: Dictionary, inventory: StationData) -> void:
-	if station.has("planet_index") or station.owner != 0 or station.firm != 0 or station.manager == world.player or station.shortage < 30 or station.get("blockaded",false) or station.get("coalition_blockade",false):
+	if station.has("planet_index") or station.owner != 0 or station.firm != 0 or station.manager == world.player or station.get("blockaded",false) or station.get("coalition_blockade",false):
+		return
+	var mgr: Dictionary = world.people.get(station.manager, {})
+	var mgr_traits: Array = mgr.get("ck_traits", [])
+	var threshold := 12
+	if "仁慈" in mgr_traits or (not mgr.is_empty() and mgr.stats.stewardship >= 10):
+		threshold = 8
+	elif "贪婪" in mgr_traits:
+		threshold = 20
+	if station.shortage < threshold:
 		return
 	if station.expansion > 0 or station.modules.size() >= Industry.CONSTRUCTION.max_modules:
 		return
@@ -994,6 +1018,59 @@ static func produce(world, station: Dictionary) -> void:
 			yard_slot += 1
 		else:
 			run_module(world, station, kind, inventory)
+	_restock_black_luxury(world, station, inventory)
+	_distribute_black_profits(world, station)
+
+static func _distribute_black_profits(world, station: Dictionary) -> void:
+	if world.day % 30 != 0 or station.build > 0 or station.black.is_empty():
+		return
+	var reserve := int(Industry.RULES.station_capital.get("black_cash", 1800))
+	var excess := int(station.get("black_treasury", 0)) - reserve
+	if excess < 80:
+		return
+	var mgr_id := int(station.get("manager", 0))
+	if mgr_id != 0 and mgr_id != world.player and world.people.has(mgr_id):
+		var mgr: Dictionary = world.people[mgr_id]
+		var traits: Array = mgr.get("ck_traits", [])
+		var greedy: bool = "贪婪" in traits or "狡诈" in traits or int(mgr.get("personality", {}).get("greed", 0)) >= 25
+		if mgr.alive and greedy:
+			var cut := floori(excess * 0.30)
+			if cut > 0:
+				station.black_treasury = int(station.black_treasury) - cut
+				world.credit(mgr_id, cut)
+				excess -= cut
+				var secrets: Array = mgr.get("secrets", [])
+				if not secrets.any(func(s): return s is Dictionary and s.get("kind", "") == "smuggling"):
+					secrets.append({"kind": "smuggling", "port": int(station.id), "day": world.day})
+					mgr.secrets = secrets
+	if excess >= 60:
+		var boss: Dictionary = world.Outlaws.boss_for(world, world.Outlaws.PIRATES)
+		if not boss.is_empty() and boss.get("alive", false):
+			var boss_cut := floori(excess * 0.50)
+			if boss_cut > 0:
+				station.black_treasury = int(station.black_treasury) - boss_cut
+				world.credit(int(boss.id), boss_cut)
+
+static func _restock_black_luxury(world, station: Dictionary, inventory: StationData) -> void:
+	if world.day % 12 != 0 or station.build > 0 or station.black.is_empty():
+		return
+	var lux := Industry.Ware.LUXURY
+	if int(station.black[lux]) >= 12:
+		return
+	var has_craft: bool = (Industry.Module.HABITAT in station.modules or Industry.Module.CHEMICAL in station.modules) and (Industry.Module.ELECTRONICS in station.modules or int(station.pop) >= 600)
+	if not has_craft:
+		return
+	var food := Industry.Ware.RATIONS
+	var elec := Industry.Ware.ELECTRONICS
+	if inventory.available(food) < 25 or inventory.available(elec) < 8:
+		return
+	var cost := price(station, food, true) + price(station, elec, true)
+	if int(station.get("black_treasury", 0)) < cost + 120:
+		return
+	if inventory.consume({food: 1, elec: 1}):
+		station.black_treasury = int(station.get("black_treasury", 0)) - cost
+		world.Treasury.post(world, station, cost, "黑市原料采购", false)
+		station.black[lux] = int(station.black[lux]) + 2
 
 static func order_hull(world, port_id: int, kind: int) -> bool:
 	var station: Dictionary = world.ports.get(port_id,{})
@@ -1581,6 +1658,8 @@ static func fly_leg(world, vessel: Dictionary, target: Dictionary, days: float) 
 		if move_local(vessel,stop,LOCAL_DISTANCE_PER_DAY * speed * days):
 			if not mining:
 				world.berth(vessel,target.id)
+				if vessel.job.get("kind","") == "客运":
+					_disembark_arrived(world, vessel, target.id)
 			vessel.travel = {}
 			if not vessel.get("order_queue",[]).is_empty() and vessel.dock == target.id:
 				step_order(world,vessel,0.0)
@@ -1867,7 +1946,12 @@ static func trade_plan(world, vessel: Dictionary) -> Dictionary:
 				if net <= 0:
 					continue
 				var depth_factor := clampf(float(stock) / maxf(8.0, float(hold)), 0.35, 1.0)
-				var score := freight_score(net,pickup.days,delivery.days) * depth_factor
+				var urgency := 1.0
+				if ware in Industry.COLONY_NEEDS and int(dest.get("shortage", 0)) > 0:
+					urgency *= 1.0 + clampf(float(dest.shortage) / 15.0, 0.6, 3.0)
+				elif ware == Industry.Ware.ENERGY and (Industry.Module.HABITAT in dest.modules or Industry.Module.CHEMICAL in dest.modules) and Industry.available(dest, Industry.Ware.ENERGY) < 20:
+					urgency *= 2.2
+				var score := freight_score(net,pickup.days,delivery.days) * depth_factor * urgency
 				highest = maxf(highest, score)
 				candidates.append({"source":source.id,"target":dest.id,"ware":ware,"phase":0,"quantity":lot.x,"score":score,"relief_port":dest.id if fee > 0 else 0})
 	if candidates.is_empty():
@@ -2396,13 +2480,24 @@ static func step_ship(world, vessel: Dictionary, duty_days: float = 6.0) -> void
 			vessel.mimic_template = behavior.duplicate(true)
 			vessel.default_behavior = behavior.duplicate(true)
 	if vessel.job.is_empty():
-		return
+		# Older NPC service companies can own a crewed first ship without an initial assignment.
+		var firm: Dictionary = world.firms.get(vessel.get("firm", 0), {})
+		if firm.is_empty() or int(vessel.dock) == 0 or not vessel.get("default_behavior", {}).is_empty() or vessel.has("fleet_role") or world.oversees(int(firm.director)):
+			return
+		if int(firm.director) <= 0 or not world.Politics.assign_company_service(world, str(firm.get("sector", "")), int(firm.director), vessel, int(firm.hq)):
+			return
 	var job: Dictionary = vessel.job
 	if job.get("kind","") == "施工配送":
 		haul_construction(world,vessel)
 		return
+	if job.get("kind","") == "客运":
+		step_passenger_ship(world,vessel)
+		return
+	if job.get("kind","") == "工程承包" and not vessel.has("construction_contract"):
+		world.ConstructionContract.step_contractor(world,vessel)
+		return
 	if job.get("kind","") in ["停泊待命","巡逻"]:
-		var home: Dictionary = world.ports.get(job.source,{})
+		var home: Dictionary = world.ports.get(int(job.get("source", 0)), {})
 		if home.is_empty() or forbidden(vessel,home) or not allowed(world,vessel,home):
 			return
 		if job.kind == "停泊待命" or vessel.system != home.system or vessel.layer:
@@ -2419,7 +2514,8 @@ static func step_ship(world, vessel: Dictionary, duty_days: float = 6.0) -> void
 		return
 	if job.get("kind","") == "护航":
 		if (vessel.owner != 0 or vessel.has("firm")) and vessel.dock != 0:
-			var leader_id: int = vessel.get("commander_id",world.people[vessel.owner].ship)
+			var owner_ship := int(world.people[vessel.owner].ship) if world.people.has(vessel.owner) else 0
+			var leader_id: int = int(vessel.get("commander_id", owner_ship))
 			var lead: Dictionary = world.ships.get(leader_id,{})
 			if not lead.is_empty() and lead.dock == 0 and lead.system == vessel.system:
 				world.depart(vessel)
@@ -2637,8 +2733,8 @@ static func refit_quote(world, port_id: int, slot_index: int, weapon_key: String
 		quote.reason = "装配点不足"
 	elif price > 0 and player_funds(world,vessel) < price:
 		quote.reason = "信用点不足"
-	elif not black and -price > world.Treasury.available(station):
-		quote.reason = "本站回购预算不足"
+	elif -price > (int(station.get("black_treasury", 0)) if black else world.Treasury.available(station)):
+		quote.reason = "黑市回购资金不足" if black else "本站回购预算不足"
 	elif weapon_key != "" and not black:
 		var w_mats := weapon_materials(weapon_key)
 		var lacking := false
@@ -2667,7 +2763,9 @@ static func refit_slot(world, port_id: int, slot_index: int, weapon_key: String,
 	if not weapon_key.is_empty() and not black and not Industry.consume(station, weapon_materials(weapon_key)):
 		return false
 	player_pay(world,vessel,-int(quote.net),"整备换装")
-	if not black:
+	if black:
+		station.black_treasury = maxi(0, int(station.get("black_treasury", 0)) + int(quote.net))
+	else:
 		world.Treasury.post(world,station,quote.net,"整备换装")
 	vessel.fit = candidate
 	if slot_index < vessel.battle.cooldowns.size():
@@ -2804,3 +2902,279 @@ static func advance(world) -> void:
 			system.ore = mini(180, system.ore + 14)
 			for ware in system.get("deposits",{}):
 				system.deposits[ware] = mini(180,system.deposits[ware]+14)
+
+static func passenger_capacity(vessel: Dictionary) -> int:
+	return clampi(6 + int(Hulls.MODELS[vessel.kind].size) * 4, 6, 18)
+
+static func ticket_price(world, origin_id: int, dest_id: int) -> int:
+	var p1: Dictionary = world.ports.get(origin_id, {})
+	var p2: Dictionary = world.ports.get(dest_id, {})
+	if p1.is_empty() or p2.is_empty():
+		return 25
+	var dist: float = world.distance(int(p1.system), int(p2.system))
+	return clampi(roundi(12.0 + dist / 45.0), 15, 60)
+
+static func passenger_fare(world, person: Dictionary, vessel: Dictionary, dest_id: int) -> int:
+	var fare := ticket_price(world, int(vessel.dock), dest_id)
+	var captain: Dictionary = world.people.get(vessel.captain, {})
+	var negotiated := roundi(fare * 1.1)
+	if not captain.is_empty() and captain.stats.diplomacy >= 9 and int(person.wallet) >= negotiated:
+		fare = negotiated
+	var peak := roundi(fare * 1.25)
+	if vessel.get("passengers", []).size() * 2 >= passenger_capacity(vessel) and int(person.wallet) >= peak:
+		fare = peak
+	return fare
+
+static func build_passenger_route(world, hub_id: int, carrier_flag: Variant = null) -> Array[int]:
+	var hub: Dictionary = world.ports.get(hub_id, {})
+	if hub.is_empty():
+		return []
+	var flag := int(hub.flag if carrier_flag == null else carrier_flag)
+	if world.hostile(flag, int(hub.flag)):
+		return []
+	var by_sys := {}
+	for port: Dictionary in world.ports.values():
+		if int(port.id) == hub_id or int(port.build) != 0 or port.get("landing_only", false) or port.has("planet_index"):
+			continue
+		if world.hostile(int(hub.flag), int(port.flag)) or world.hostile(flag, int(port.flag)):
+			continue
+		var sys_id := int(port.system)
+		if sys_id == int(hub.system):
+			continue
+		if not by_sys.has(sys_id) or int(port.pop) > int(world.ports[by_sys[sys_id]].pop):
+			by_sys[sys_id] = int(port.id)
+	var candidates: Array[Dictionary] = []
+	for sys_id in by_sys:
+		var pid: int = by_sys[sys_id]
+		candidates.append({"id": pid, "dist": world.distance(int(hub.system), int(sys_id))})
+	candidates.sort_custom(func(a, b): return float(a.dist) < float(b.dist) if float(a.dist) != float(b.dist) else int(a.id) < int(b.id))
+	var route: Array[int] = [hub_id]
+	for item in candidates.slice(0, 3):
+		route.append(int(item.id))
+	return route
+
+static func docked_liners(world, port_id: int) -> Array[Dictionary]:
+	var list: Array[Dictionary] = []
+	for sh: Dictionary in world.ships.values():
+		if int(sh.get("dock", 0)) == port_id and sh.get("job", {}).get("kind", "") == "客运":
+			list.append(sh)
+	return list
+
+static func assign_passenger_liner(world, ship_id: int, custom_route: Array = [], actor_id: int = 0) -> Dictionary:
+	var vessel: Dictionary = world.ships.get(ship_id, {})
+	if vessel.is_empty() or not world.oversees(world.ship_principal(vessel), actor_id):
+		return {"ok": false, "reason": "无权调度该舰船。"}
+	if int(vessel.captain) in [0, world.player]:
+		return {"ok": false, "reason": "需先雇佣 NPC 代理人船长执掌该客船。"}
+	var hub := int(vessel.dock) if int(vessel.dock) != 0 and world.ports.has(int(vessel.dock)) else int(world.systems[0].ports[0])
+	var route: Array[int] = []
+	if not custom_route.is_empty():
+		for pid in custom_route:
+			var id := int(pid)
+			var st: Dictionary = world.ports.get(id, {})
+			if not st.is_empty() and int(st.build) == 0 and not st.get("landing_only", false) and not world.hostile(int(vessel.flag), int(st.flag)) and id not in route:
+				route.append(id)
+	else:
+		route = build_passenger_route(world, hub, vessel.flag)
+	if route.size() < 2:
+		return {"ok": false, "reason": "至少需要 2 座友好营业港口才能开通客运班线。"}
+	if vessel.get("order_queue", []).is_empty():
+		release_reservation(world, vessel)
+		vessel.travel = {}
+	vessel.erase("commander_id")
+	vessel.erase("fleet_role")
+	vessel.erase("resume_job")
+	if not vessel.has("passengers"):
+		vessel.passengers = []
+	vessel.job = {"kind": "客运", "home_port": route[0], "route": route, "stop_index": 0, "layover": 1}
+	vessel.default_behavior = vessel.job.duplicate(true)
+	world.event("%s 已由代理人 %s 执飞自营客运班线（经停 %d 港）。" % [world.HULLS[vessel.kind], world.name_of(int(vessel.captain)), route.size()])
+	return {"ok": true, "ship": ship_id, "route": route}
+
+static func board_passenger(world, person_id: int, ship_id: int, dest_port_id: int, expected_fare: int = -1) -> Dictionary:
+	var person: Dictionary = world.people.get(person_id, {})
+	var vessel: Dictionary = world.ships.get(ship_id, {})
+	if person.is_empty() or not person.alive or world.Politics.age(world, person) < 18:
+		return {"ok": false, "reason": "乘客不符合登船条件。"}
+	if int(person.get("ship", 0)) != 0 or int(person.get("transit_ship", 0)) != 0:
+		return {"ok": false, "reason": "需先离舰且未处于乘船途中。"}
+	if vessel.is_empty() or vessel.get("job", {}).get("kind", "") != "客运" or int(vessel.dock) == 0:
+		return {"ok": false, "reason": "该客船当前未靠港。"}
+	if int(person.loc) != int(vessel.dock):
+		return {"ok": false, "reason": "需与客船在同一港口才能购票登船。"}
+	var route: Array = vessel.job.get("route", [])
+	if dest_port_id == int(vessel.dock) or dest_port_id not in route or not world.ports.has(dest_port_id):
+		return {"ok": false, "reason": "目的地不在本班客船航线上。"}
+	if world.hostile(int(person.flag), int(world.ports[dest_port_id].flag)):
+		return {"ok": false, "reason": "敌对港口禁止购票前往。"}
+	if not vessel.has("passengers"):
+		vessel.passengers = []
+	if vessel.passengers.size() >= passenger_capacity(vessel):
+		return {"ok": false, "reason": "本班客船已满员。"}
+	var fare := passenger_fare(world, person, vessel, dest_port_id)
+	if expected_fare >= 0 and fare != expected_fare:
+		return {"ok": false, "reason": "票价已变为 ¢%d，请重新购票。" % fare}
+	if int(person.wallet) < fare:
+		return {"ok": false, "reason": "信用点不足（票价 ¢%d）。" % fare}
+	world.credit(person_id, -fare)
+	var st_owner := int(vessel.get("station_owner", 0))
+	if st_owner > 0 and world.ports.has(st_owner):
+		world.Treasury.post(world, world.ports[st_owner], fare, "客运票款", false)
+	elif vessel.has("firm") and world.firms.has(int(vessel.firm)):
+		var f: Dictionary = world.firms[int(vessel.firm)]
+		f.treasury = int(f.treasury) + fare
+		f.revenue = int(f.get("revenue", 0)) + fare
+		f.operating_profit = int(f.get("operating_profit", 0)) + fare
+		world.Finances.record(world, int(f.director), {"id": int(vessel.firm), "name": f.name, "ledger_type": "company"}, "客运票款", fare, false, true)
+	elif int(vessel.owner) > 0 and world.people.has(int(vessel.owner)):
+		world.credit(int(vessel.owner), fare, vessel, "客运票款")
+		world.Finances.record(world, int(vessel.owner), vessel, "客运票款", fare, false, false)
+	elif world.ports.has(int(vessel.dock)):
+		world.Treasury.post(world, world.ports[int(vessel.dock)], fare, "客运票款", false)
+	vessel.passengers.append(person_id)
+	person.loc = 0
+	person.transit_ship = ship_id
+	person.travel_dest = dest_port_id
+	if person_id == world.player:
+		world.event("已购票（¢%d）登上公共客船，前往 %s。" % [fare, world.ports[dest_port_id].name])
+	return {"ok": true, "fare": fare, "ship": ship_id, "dest": dest_port_id}
+
+static func disembark_passenger(world, person_id: int, port_id: int = 0) -> bool:
+	var person: Dictionary = world.people.get(person_id, {})
+	if person.is_empty():
+		return false
+	var ship_id := int(person.get("transit_ship", 0))
+	if ship_id == 0:
+		return false
+	var vessel: Dictionary = world.ships.get(ship_id, {})
+	var target_port := port_id if port_id > 0 else int(vessel.get("dock", 0))
+	if target_port == 0 or not world.ports.has(target_port):
+		return false
+	if not vessel.is_empty() and vessel.has("passengers"):
+		vessel.passengers.erase(person_id)
+	person.loc = target_port
+	person.erase("transit_ship")
+	person.erase("travel_dest")
+	return true
+
+static func _disembark_arrived(world, vessel: Dictionary, port_id: int) -> void:
+	var cur_port: Dictionary = world.ports.get(port_id, {})
+	if cur_port.is_empty():
+		return
+	for pax_id in vessel.get("passengers", []).duplicate():
+		var pax: Dictionary = world.people.get(int(pax_id), {})
+		if pax.is_empty() or not pax.alive:
+			vessel.passengers.erase(pax_id)
+			continue
+		var dest := int(pax.get("travel_dest", 0))
+		if dest == port_id or dest == 0 or not world.ports.has(dest) or world.hostile(int(pax.flag), int(world.ports[dest].flag)):
+			disembark_passenger(world, int(pax_id), port_id)
+			if int(pax_id) == world.player:
+				world.event("已随公共客船抵达 %s 并下船。" % cur_port.name)
+
+static func step_passenger_ship(world, vessel: Dictionary) -> void:
+	if not vessel.has("passengers"):
+		vessel.passengers = []
+	var job: Dictionary = vessel.job
+	var hub_id := int(job.get("home_port", vessel.get("station_owner", vessel.dock)))
+	var raw_route: Array = job.get("route", [])
+	var route: Array[int] = []
+	for pid in raw_route:
+		var st: Dictionary = world.ports.get(int(pid), {})
+		if not st.is_empty() and int(st.build) == 0 and not st.get("landing_only", false) and not world.hostile(int(vessel.flag), int(st.flag)):
+			if int(pid) not in route:
+				route.append(int(pid))
+	if route.size() < 2 and world.ports.has(hub_id):
+		route = build_passenger_route(world, hub_id, vessel.flag)
+	job.route = route
+	if route.size() < 2 or int(vessel.dock) == 0:
+		return
+	var cur_port_id := int(vessel.dock)
+	var cur_port: Dictionary = world.ports.get(cur_port_id, {})
+	if cur_port.is_empty():
+		return
+	# 1. Disembark arrived or invalid passengers
+	_disembark_arrived(world, vessel, cur_port_id)
+	# 2. Refuel at current port
+	refuel_trader(world, vessel, cur_port)
+	# 3. Board waiting NPCs bound for any other stop on this route
+	var cap := passenger_capacity(vessel)
+	if vessel.passengers.size() < cap:
+		for other: Dictionary in world.people.values():
+			if vessel.passengers.size() >= cap:
+				break
+			if not other.alive or int(other.id) == world.player or int(other.id) == world.regency:
+				continue
+			if int(other.loc) != cur_port_id or int(other.ship) != 0 or int(other.get("transit_ship", 0)) != 0:
+				continue
+			var want_dest := int(other.get("travel_dest", 0))
+			if want_dest != 0 and want_dest != cur_port_id and want_dest in route:
+				board_passenger(world, int(other.id), int(vessel.id), want_dest)
+	# 4. Layover then depart to next stop on route
+	var layover := int(job.get("layover", 0))
+	if layover > 0:
+		job.layover = layover - 1
+		return
+	var idx := route.find(cur_port_id)
+	var next_idx := (idx + 1) % route.size() if idx >= 0 else 0
+	var next_port: Dictionary = world.ports.get(route[next_idx], {})
+	if not next_port.is_empty() and int(next_port.id) != cur_port_id:
+		job.stop_index = next_idx
+		job.layover = 1
+		begin_trip(world, vessel, next_port)
+
+## Used ship market: depreciated trade-in & purchase with preserved service history.
+static func used_hull_price(world, station: Dictionary, kind: int, built_day: int) -> int:
+	var base := int(ship_quote(station, kind).price)
+	var age_years := maxf(0.0, float(world.day - built_day) / 360.0)
+	var dep := clampf(0.68 - age_years * 0.04, 0.42, 0.68)
+	return maxi(60, roundi(float(base) * dep))
+
+static func sell_used_ship_to_yard(world, ship_id: int, port_id: int) -> int:
+	var vessel: Dictionary = world.ships.get(ship_id, {})
+	var station: Dictionary = world.ports.get(port_id, {})
+	if vessel.is_empty() or station.is_empty() or int(station.build) != 0 or int(vessel.dock) != port_id:
+		return 0
+	if int(vessel.owner) <= 0 or not world.people.has(int(vessel.owner)) or int(vessel.captain) != 0:
+		return 0
+	var quote := used_hull_price(world, station, int(vessel.kind), int(vessel.get("built_day", 0)))
+	if world.Treasury.available(station) < quote or not world.Treasury.post(world, station, -quote, "二手船回收", true):
+		return 0
+	var owner_id := int(vessel.owner)
+	world.credit(owner_id, quote)
+	var hist: Array = vessel.get("history", []).duplicate()
+	hist.append("%d年 于 %s 折价挂牌二手船" % [2400 + world.day / 360, station.name])
+	var used_list: Array = station.get_or_add("used_hulls", [])
+	used_list.append({"id": world.uid(), "kind": int(vessel.kind), "built_day": int(vessel.get("built_day", 0)),
+		"price": roundi(float(quote) * 1.15), "history": hist.slice(maxi(0, hist.size() - 8))})
+	if used_list.size() > 6:
+		used_list.pop_front()
+	world.ships.erase(ship_id)
+	return quote
+
+static func buy_used_ship(world, buyer_id: int, port_id: int, listing_id: int) -> int:
+	var buyer: Dictionary = world.people.get(buyer_id, {})
+	var station: Dictionary = world.ports.get(port_id, {})
+	if buyer.is_empty() or not buyer.alive or station.is_empty() or int(station.build) != 0:
+		return 0
+	var used_list: Array = station.get("used_hulls", [])
+	var idx := -1
+	for i in used_list.size():
+		if int(used_list[i].get("id", 0)) == listing_id:
+			idx = i
+			break
+	if idx < 0:
+		return 0
+	var item: Dictionary = used_list[idx]
+	var cost := int(item.get("price", 0))
+	if cost <= 0 or int(buyer.wallet) < cost:
+		return 0
+	world.credit(buyer_id, -cost)
+	world.Treasury.post(world, station, cost, "二手船售出", false)
+	var sid: int = world.ship(int(item.kind), buyer_id, 0, int(buyer.flag), int(station.system), station.pos, port_id)
+	world.ships[sid].built_day = int(item.get("built_day", world.day))
+	var hist: Array = item.get("history", []).duplicate()
+	hist.append("%d年 由 %s 购入再服役" % [2400 + world.day / 360, buyer.name])
+	world.ships[sid].history = hist
+	used_list.remove_at(idx)
+	return sid

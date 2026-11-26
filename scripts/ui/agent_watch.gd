@@ -16,6 +16,7 @@ var progress_text: Label
 var progress_bar: ProgressBar
 var history: VBoxContainer
 var history_rows: Array[Label] = []
+var cheat_toggle: CheckButton
 var pending := {}
 var game
 var sidebar_slot: Control
@@ -54,18 +55,18 @@ func _ready() -> void:
 	indicator.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	header.add_child(indicator)
 	add_label(header,"Agent 观战",16,TEAL)
-	var cheat_toggle := CheckButton.new()
+	cheat_toggle = CheckButton.new()
 	cheat_toggle.text = "允许作弊"
-	cheat_toggle.mouse_filter = Control.MOUSE_FILTER_STOP
+	cheat_toggle.focus_mode = Control.FOCUS_NONE
 	cheat_toggle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	cheat_toggle.alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	cheat_toggle.add_theme_font_size_override("font_size", 12)
 	cheat_toggle.add_theme_color_override("font_color", GOLD)
-	cheat_toggle.button_pressed = game != null and game.agent_bridge != null and bool(game.agent_bridge.allow_cheats)
 	cheat_toggle.toggled.connect(func(on: bool):
 		if game != null and game.agent_bridge != null:
 			game.agent_bridge.allow_cheats = on)
 	header.add_child(cheat_toggle)
+	_sync_cheat_toggle()
 	intent = add_label(body,"",15,INK)
 	intent.clip_text = false
 	intent.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -104,8 +105,17 @@ func _ready() -> void:
 	present(pending)
 	pending = {}
 
+func _sync_cheat_toggle() -> void:
+	if not is_instance_valid(cheat_toggle):
+		return
+	var has_bridge: bool = game != null and game.agent_bridge != null
+	cheat_toggle.visible = has_bridge
+	cheat_toggle.mouse_filter = Control.MOUSE_FILTER_STOP if has_bridge else Control.MOUSE_FILTER_IGNORE
+	cheat_toggle.set_pressed_no_signal(has_bridge and bool(game.agent_bridge.allow_cheats))
+
 func bind_game(session) -> void:
 	game = session
+	_sync_cheat_toggle()
 	schedule_placement()
 
 func schedule_placement() -> void:

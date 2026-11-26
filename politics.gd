@@ -331,8 +331,12 @@ static func landing(world, actor: Dictionary) -> int:
 	if actor.loc != 0 and world.ports.has(actor.loc):
 		return actor.loc
 	if world.ships.has(actor.ship):
-		return world.systems[world.ships[actor.ship].system].ports[0]
-	return world.systems[0].ports[0]
+		var sys_ports: Array = world.systems[world.ships[actor.ship].system].ports
+		if not sys_ports.is_empty():
+			return int(sys_ports[0])
+	if not world.systems.is_empty() and not world.systems[0].ports.is_empty():
+		return int(world.systems[0].ports[0])
+	return int(world.ports.keys()[0]) if not world.ports.is_empty() else 0
 
 static func find_regent(world, child_id: int) -> int:
 	var child_data: Dictionary = world.people[child_id]
@@ -403,7 +407,7 @@ static func die(world, person_id: int, save_first: bool = true) -> void:
 		else:
 			var candidates: Array = world.systems_owned(flag)
 			group.leader = select_leader(world, flag, candidates[0] if not candidates.is_empty() else fallback, person_id)
-		group.npc = group.leader != main or not was_player
+		group.npc = group.leader != (main if was_player else world.player)
 		var incoming: Dictionary = world.people[group.leader]
 		for subordinate in world.people.values():
 			if subordinate.alive and subordinate.flag == flag and subordinate.id != incoming.id:
@@ -414,6 +418,21 @@ static func die(world, person_id: int, save_first: bool = true) -> void:
 			board(world, firm_id)
 	if not world.campaign.get("equity_orders",{}).get("orders",{}).is_empty():
 		world.EquityOrders.audit(world)
+	# Generational family memory: living children inherit a portion of strong feuds and alliances
+	for cid in actor.get("children", []):
+		var heir: Dictionary = world.people.get(int(cid), {})
+		if heir.is_empty() or not heir.alive:
+			continue
+		for other_id in actor.get("opinions", {}):
+			var oid := int(other_id)
+			if oid == int(cid) or not world.people.has(oid) or not world.people[oid].alive:
+				continue
+			var op := int(actor.opinions[other_id])
+			if op <= -45 or op >= 55:
+				var inherited := roundi(float(op) * 0.35)
+				heir.opinions[oid] = clampi(int(heir.opinions.get(oid, 0)) + inherited, -100, 100)
+				if op <= -60 and not heir.get("relations", {}).has(oid) and actor.get("relations", {}).get(oid, "") == "rival":
+					Society.set_relation(heir, oid, "rival")
 	if not was_player:
 		if person_id == world.regency:
 			world.regency = 0
@@ -531,7 +550,7 @@ static func new_adventurer(world) -> bool:
 	var gender: int = world.rng.randi_range(0, 1)
 	var names := ["林溯", "沈岚", "周澈", "顾屿", "陆离", "许衡", "叶青", "程远"]
 	var new_name: String = names[world.rng.randi_range(0, names.size() - 1)]
-	var new_id: int = world.person(new_name, "远岚", -26 * 360, world.NEUTRAL, spawn_port, 0, world.rng.randi_range(0, 3), Portrait.random_look_for_gender(world.rng, gender), gender)
+	var new_id: int = world.person(new_name, "远岚", world.day - 26 * 360, world.NEUTRAL, spawn_port, 0, world.rng.randi_range(0, 3), Portrait.random_look_for_gender(world.rng, gender), gender)
 	world.people[new_id].wallet = int(Economy.Industry.RULES.ship_market.starting_working_capital)
 	var starter_kind: int = Hulls.kind_for_reference(starter_ref)
 	var ship_id: int = world.ship(starter_kind, new_id, new_id, world.NEUTRAL, station.system, station.pos, spawn_port)
@@ -720,12 +739,21 @@ static func military(world) -> void:
 		var leader: Dictionary = world.people[group.leader]
 		var interval := [110, 180, 140][group.style] as int
 		interval -= 20 if leader.trait == 1 else 0
+		var boldness := int(leader.get("personality", {}).get("boldness", 0))
+		interval = clampi(interval - roundi(float(boldness) * 0.4), 70, 240)
 		if world.day - group.last_war < interval:
 			continue
 		var target := rival(world, flag, capital)
 		if target.is_empty():
 			continue
 		var new_war: bool = not world.hostile(flag,target.flag)
+		if new_war:
+			var target_leader := int(world.factions.get(target.flag, {}).get("leader", 0))
+			if target_leader != 0 and world.people.has(target_leader):
+				var rel: String = leader.get("relations", {}).get(target_leader, "")
+				var op := opinion(world, leader.id, target_leader)
+				if (rel == "friend" or kin(world, leader.id, target_leader) or op >= 45) and boldness < 60:
+					continue
 		if new_war:
 			var reserve_days: int = [12,45,25][group.style]
 			if world.day < interval / 2 + int(flag)*3 or capital.flag != flag or capital.get("blockaded",false):
@@ -775,7 +803,11 @@ static func military(world) -> void:
 			v.dock = 0
 			v.job = {"kind": "攻城", "target": target.id, "origin_system": v.system, "started": world.day, "eta": world.day + transit}
 	WarPeace.daily(world)
-	if world.day % 6 == 0:
+	if world.day % 30 == 0:
+		var managers := {}
+		for st: Dictionary in world.ports.values():
+			if int(st.get("manager", 0)) != 0:
+				managers[int(st.manager)] = true
 		for pid in world.people:
 			var member: Dictionary = world.people[pid]
 			if not member.alive or int(member.flag) < 0:
@@ -783,12 +815,15 @@ static func military(world) -> void:
 			var grp: Dictionary = world.factions.get(member.flag, {})
 			if not grp.get("alive", false) or int(grp.leader) == pid:
 				continue
-			var stipend := 12 + int(member.get("merit", 0)) * 4
-			if int(grp.get("treasury", 0)) >= stipend + 40:
+			var is_active: bool = pid == world.player or managers.has(pid) or int(member.get("ship", 0)) != 0
+			if not is_active:
+				continue
+			var stipend := 10 + mini(int(member.get("merit", 0)), 20) * 2
+			if int(grp.get("treasury", 0)) >= stipend + 600:
 				grp.treasury -= stipend
 				member.wallet += stipend
 				if pid == world.player:
-					world.event("收到 %s 阵营俸禄 ¢%d。" % [world.flag_name(member.flag), stipend])
+					world.event("收到 %s 月度阵营俸禄 ¢%d。" % [world.flag_name(member.flag), stipend])
 
 static func join_faction(world, person_id: int, flag: int) -> bool:
 	var actor: Dictionary = world.people.get(person_id, {})
@@ -1006,8 +1041,10 @@ static func choose_work_ship(actor: Dictionary, port: Dictionary, current: Dicti
 
 static func npc_social_step(world, actor: Dictionary, arch: String) -> void:
 	if int(actor.get("stress", 0)) >= 100:
-		if actor.wallet >= 40 and world.rng.randf() < 0.65:
+		var port_here: Dictionary = world.ports.get(int(actor.get("loc", 0)), {})
+		if actor.wallet >= 40 and not port_here.is_empty() and world.rng.randf() < 0.65:
 			world.credit(actor.id, -40)
+			world.Treasury.post(world, port_here, 40, "人物挥霍消费", false)
 			Society.stress(world, actor, -65)
 			Society.apply_trait_mod(actor, "挥霍")
 		else:
@@ -1036,6 +1073,52 @@ static func npc_social_step(world, actor: Dictionary, arch: String) -> void:
 			if recipient.id != world.player and opinion(world,recipient.id,actor.id) >= 60 and not actor.get("relations",{}).has(recipient.id):
 				Society.set_relation(actor,recipient.id,"friend")
 				Society.set_relation(recipient,actor.id,"friend")
+	_npc_scheme_action(world, actor, arch)
+
+static func _npc_scheme_action(world, actor: Dictionary, arch: String) -> void:
+	var hooks: Dictionary = actor.get("hooks", {})
+	if hooks.is_empty():
+		return
+	var aid := int(actor.id)
+	for tid_key in hooks.keys():
+		var tid := int(tid_key)
+		var hook: Dictionary = hooks[tid_key]
+		if int(hook.get("expires", 0)) < world.day or not world.people.has(tid) or not world.people[tid].alive:
+			hooks.erase(tid_key)
+			continue
+		if tid == world.player or tid == world.regency:
+			continue
+		var target: Dictionary = world.people[tid]
+		var op := opinion(world, aid, tid)
+		var kind := str(hook.get("kind", ""))
+		# Expose corrupt manager / contractor scandal to faction leader if hostile
+		if kind in ["smuggling", "kickback"] and op <= -35:
+			hooks.erase(tid_key)
+			target.merit = maxi(0, int(target.get("merit", 0)) - 6)
+			target.prestige = maxi(0, int(target.get("prestige", 0)) - 10)
+			target.opinions[aid] = clampi(int(target.opinions.get(aid, 0)) - 45, -100, 100)
+			Society.set_relation(target, aid, "rival")
+			var fl := int(world.factions.get(int(target.flag), {}).get("leader", 0))
+			if fl != 0 and fl != tid and world.people.has(fl):
+				var leader: Dictionary = world.people[fl]
+				leader.opinions[tid] = clampi(int(leader.opinions.get(tid, 0)) - 40, -100, 100)
+				if int(leader.opinions[tid]) < -50:
+					for st: Dictionary in world.ports.values():
+						if int(st.get("manager", 0)) == tid:
+							st.manager = 0
+							target.employer = 0
+							world.event("丑闻曝光：%s 揭发 %s 涉案（%s），%s 将其罢免。" % [actor.name, target.name, kind, leader.name])
+							break
+			return
+		# Blackmail for hush money (closed-loop)
+		if (arch == "schemer" or op < 20) and int(target.wallet) >= 300:
+			var demand := clampi(floori(float(target.wallet) * 0.18), 80, 400)
+			world.credit(tid, -demand)
+			world.credit(aid, demand)
+			hooks.erase(tid_key)
+			target.opinions[aid] = clampi(int(target.opinions.get(aid, 0)) - 35, -100, 100)
+			Society.set_relation(target, aid, "rival")
+			return
 
 static func _npc_pioneer_station(world, actor: Dictionary) -> bool:
 	var terms: Dictionary = Economy.Industry.CONSTRUCTION.foundation
@@ -1155,17 +1238,448 @@ static func _npc_enterprise_and_realm_step(world, actor: Dictionary) -> void:
 	for st in owned_ready:
 		if int(st.get("firm", 0)) == 0:
 			if directed_firm == 0 and int(actor.get("wallet", 0)) >= 2200 and _npc_roll(world, actor, 0.45, "incorporate"):
-				if Economy.incorporate(world, int(st.id), "%s工业" % actor.name, aid):
+				if Economy.incorporate(world, int(st.id), _company_name(world, actor, st, "industry"), aid):
 					for fid in world.firms:
 						if int(world.firms[fid].get("director", 0)) == aid:
 							directed_firm = int(fid)
 							break
 			elif directed_firm != 0:
 				world.Equity.affiliate(world, int(st.id), directed_firm)
-	if int(actor.get("flag", world.NEUTRAL)) == world.NEUTRAL and not owned_ready.is_empty() and int(actor.get("wallet", 0)) >= 10000 and _npc_roll(world, actor, 0.20, "found_faction"):
-		found(world, "%s领" % actor.house, int(owned_ready[0].id), aid % world.REGIMES.size(), aid)
+	if int(actor.get("flag", world.NEUTRAL)) == world.NEUTRAL and not owned_ready.is_empty() and int(actor.get("wallet", 0)) >= 4500 and _npc_roll(world, actor, 0.25, "found_faction"):
+		var new_reg: int = aid % world.REGIMES.size()
+		found(world, _realm_name(world, actor, owned_ready[0], new_reg), int(owned_ready[0].id), new_reg, aid)
 	if int(actor.get("ship", 0)) != 0 and int(actor.get("wallet", 0)) >= 8000 and _npc_roll(world, actor, 0.25, "pioneer"):
 		_npc_pioneer_station(world, actor)
+
+const NAME_PREFIXES := ["曙", "玄", "苍", "曜", "沧", "烬", "星", "朔", "晨", "霜", "赤", "青", "穹", "渊", "澜", "铁", "金", "银", "墨", "岚"]
+const NAME_CORES := ["铁", "帆", "枢", "渊", "穹", "原", "锋", "炬", "航", "脉", "潮", "盾", "环", "海", "辉", "域", "锚", "尘", "星", "港"]
+
+static func _clean_realm_root(raw: String) -> String:
+	var s := raw.strip_edges()
+	var dash := s.find("-")
+	if dash > 0:
+		s = s.left(dash)
+	for drop in ["自由港", "转运站", "空间站", "星港", "矿带", "船坞", "枢纽", "前哨", "矿场", "基地", "港", "站"]:
+		if s.ends_with(drop) and s.length() > drop.length():
+			s = s.left(s.length() - drop.length())
+	var clean := ""
+	for i in range(s.length()):
+		var ch := s[i]
+		if ch not in ["0","1","2","3","4","5","6","7","8","9","-","_"," ","·"]:
+			clean += ch
+	return clean.left(3) if clean.length() >= 2 else raw.left(2)
+
+static func _compose_root(world, actor: Dictionary, station: Dictionary, salt: int, prefer_house: bool = false) -> String:
+	var sys_name := str(world.systems[station.system].name) if not station.is_empty() and station.system >= 0 and station.system < world.systems.size() else str(station.get("name", ""))
+	var geo := _clean_realm_root(sys_name)
+	var house := _clean_realm_root(str(actor.get("house", "")))
+	var h := absi(hash([int(actor.get("id", 0)), int(station.get("id", 0)), salt]))
+	var mode := h % 4
+	if prefer_house and house.length() >= 2 and mode != 2:
+		return house
+	match mode:
+		0:
+			if geo.length() >= 2:
+				return geo
+		1:
+			if house.length() >= 2:
+				return house
+		2:
+			var p: String = NAME_PREFIXES[h % NAME_PREFIXES.size()]
+			var c: String = NAME_CORES[(h / 7) % NAME_CORES.size()]
+			if p != c:
+				return p + c
+		_:
+			var base := geo if geo.length() >= 1 else house
+			var c2: String = NAME_CORES[(h / 13) % NAME_CORES.size()]
+			if base.length() >= 1 and base[0] != c2:
+				return base[0] + c2
+	return NAME_PREFIXES[h % NAME_PREFIXES.size()] + NAME_CORES[(h / 5 + 3) % NAME_CORES.size()]
+
+static func _realm_name(world, actor: Dictionary, station: Dictionary, regime: int) -> String:
+	var titles := {
+		0: ["公国", "大公领", "星领", "伯爵领", "选侯领", "世袭领", "骑士领"],
+		1: ["共和国", "自由邦", "星区联邦", "议会邦", "合众邦", "公民同盟", "宪政联邦"],
+		2: ["商盟", "贸易联邦", "星航同盟", "航商公会", "自由商邦", "远航联邦"],
+		3: ["守誓团", "星枢教团", "圣辉同盟", "铁誓兵团", "护教联邦"],
+		4: ["联合财团", "星际控股", "总商会", "工业托拉斯", "星航联合体"],
+	}
+	var pool: Array = titles.get(regime, ["同盟", "自由邦"])
+	var used := {}
+	for grp: Dictionary in world.factions.values():
+		used[str(grp.get("name", ""))] = true
+	for attempt in range(8):
+		var root := _compose_root(world, actor, station, attempt * 17 + regime, regime == 0 and attempt == 0)
+		var picked: String = pool[absi(int(actor.get("id", 0)) + int(station.get("id", 0)) + attempt * 3) % pool.size()]
+		var candidate := "%s%s" % [root, picked]
+		if not used.has(candidate):
+			return candidate
+	return "%s自由邦" % _compose_root(world, actor, station, world.day + 99)
+
+static func _company_name(world, actor: Dictionary, station: Dictionary, sector: String = "industry") -> String:
+	var suffixes := {
+		"industry": ["重工", "星际实业", "轨道工业", "联矿集团", "星冶控股", "远航制造", "精密工坊", "综合商社"],
+		"construction": ["轨道建设", "星港工程", "重工承建", "天穹建工", "深空筑造", "宇航工程局"],
+		"liner": ["星际客运", "银帆航运", "星航邮轮", "星区快线", "远穹客运", "星海航线"],
+	}
+	var pool: Array = suffixes.get(sector, suffixes["industry"])
+	var used := {}
+	for fm: Dictionary in world.firms.values():
+		used[str(fm.get("name", ""))] = true
+	for attempt in range(8):
+		var root := _compose_root(world, actor, station, attempt * 23 + sector.length(), attempt == 0)
+		var picked: String = pool[absi(int(actor.get("id", 0)) + int(station.get("id", 0)) + attempt * 5) % pool.size()]
+		var candidate := "%s%s" % [root, picked]
+		if not used.has(candidate):
+			return candidate
+	return "%s实业" % _compose_root(world, actor, station, world.day + 77)
+
+static func _npc_neutral_realm_step(world, actor: Dictionary) -> void:
+	if int(actor.get("flag", world.NEUTRAL)) != world.NEUTRAL or int(actor.wallet) < 2000:
+		return
+	var loc_id := int(actor.get("loc", 0))
+	if loc_id == 0 or not world.ports.has(loc_id):
+		return
+	var starter_port := int(world.systems[0].ports[0]) if not world.systems.is_empty() and not world.systems[0].ports.is_empty() else 0
+	if loc_id == starter_port:
+		return
+	var station: Dictionary = world.ports[loc_id]
+	if int(station.flag) != world.NEUTRAL or int(station.build) != 0 or station.get("landing_only", false) or int(station.owner) != 0:
+		return
+	if int(station.manager) != int(actor.id) and not bool(actor.get("noble", false)):
+		return
+	var alive_facs := 0
+	for grp: Dictionary in world.factions.values():
+		if grp.get("alive", false):
+			alive_facs += 1
+	if alive_facs >= maxi(8, world.systems.size() / 2 + 2):
+		return
+	var qual: bool = int(actor.get("prestige", 0)) >= 5 or actor.stats.diplomacy >= 8 or "勇敢" in actor.get("ck_traits", []) or "魅力非凡" in actor.get("ck_traits", [])
+	if not qual or not _npc_roll(world, actor, 0.12, "found_faction"):
+		return
+	var aid := int(actor.id)
+	station.owner = aid
+	var regime := 0 if bool(actor.get("noble", false)) else (1 if actor.stats.diplomacy >= actor.stats.stewardship else 2)
+	var realm_name := _realm_name(world, actor, station, regime)
+	if found(world, realm_name, loc_id, regime, aid):
+		var seed_treasury := mini(1200, int(actor.wallet) - 600)
+		if seed_treasury > 0:
+			world.credit(aid, -seed_treasury)
+			world.factions[int(actor.flag)].treasury += seed_treasury
+
+static func _npc_consume_step(world, actor: Dictionary, _arch: String) -> void:
+	var loc_id := int(actor.get("loc", 0))
+	if loc_id == 0 or not world.ports.has(loc_id):
+		return
+	var station: Dictionary = world.ports[loc_id]
+	if int(station.get("build", 0)) != 0 or station.get("landing_only", false):
+		return
+	var wealthy: bool = bool(actor.get("noble", false)) or int(actor.wallet) >= 800
+	var want_basic := 2 if wealthy else 1
+	var bought_basic := false
+	for ware in [Economy.Industry.Ware.RATIONS, Economy.Industry.Ware.WATER]:
+		var avail := int(station.stock[ware])
+		if avail <= 0:
+			continue
+		var qty := mini(want_basic, avail)
+		var unit_p := Economy.price(station, ware, true)
+		var total := qty * unit_p
+		if total > 0 and int(actor.wallet) >= total:
+			station.stock[ware] = avail - qty
+			world.credit(int(actor.id), -total)
+			world.Treasury.post(world, station, total, "人物生活消费", false)
+			bought_basic = true
+	if bought_basic:
+		Society.stress(world, actor, -4)
+	elif int(station.get("shortage", 0)) > 0:
+		Society.stress(world, actor, 6)
+		var mgr_id := int(station.get("manager", 0))
+		if mgr_id != 0 and mgr_id != int(actor.id):
+			actor.opinions[mgr_id] = clampi(int(actor.opinions.get(mgr_id, 0)) - 3, -100, 100)
+	var lux := Economy.Industry.Ware.LUXURY
+	if wealthy and not station.black.is_empty() and int(station.black[lux]) > 0:
+		var lux_qty := 2 if int(actor.wallet) >= 2400 and int(station.black[lux]) >= 2 else 1
+		var lux_price := Economy.price(station, lux, true, true)
+		var lux_total := lux_qty * lux_price
+		if lux_total > 0 and int(actor.wallet) >= lux_total + 120:
+			station.black[lux] = int(station.black[lux]) - lux_qty
+			world.credit(int(actor.id), -lux_total)
+			station.black_treasury = int(station.get("black_treasury", 0)) + lux_total
+			Society.stress(world, actor, -12)
+			actor.prestige = int(actor.get("prestige", 0)) + 1
+			if bool(actor.get("noble", false)):
+				for peer: Dictionary in world.people.values():
+					if peer.alive and int(peer.id) != int(actor.id) and int(peer.loc) == loc_id:
+						peer.opinions[int(actor.id)] = clampi(int(peer.opinions.get(int(actor.id), 0)) + 3, -100, 100)
+
+static func npc_choose_ambition(world, actor: Dictionary, arch: String) -> String:
+	var loc_id := int(actor.get("loc", 0))
+	var st: Dictionary = world.ports.get(loc_id, {})
+	if not st.is_empty() and int(actor.get("ship", 0)) == 0 and (int(st.get("shortage", 0)) >= 12 or float(st.get("stability", 100.0)) < 45.0):
+		actor.ambition = "survive_flee"
+		return "survive_flee"
+	var cur := str(actor.get("ambition", ""))
+	if cur in ["found_construction", "found_liner", "acquire_equity", "scheme_power", "merchant_fleet"]:
+		return cur
+	var is_dir := false
+	for fm: Dictionary in world.firms.values():
+		if int(fm.get("director", 0)) == int(actor.id):
+			is_dir = true
+			break
+	if not is_dir and actor.stats.stewardship >= 8:
+		actor.ambition = "found_construction"
+	elif not is_dir and actor.stats.diplomacy >= 8:
+		actor.ambition = "found_liner"
+	elif arch == "schemer" or actor.stats.intrigue >= 9:
+		actor.ambition = "scheme_power"
+	elif bool(actor.get("noble", false)) or int(actor.wallet) >= 2000:
+		actor.ambition = "acquire_equity"
+	else:
+		actor.ambition = "merchant_fleet"
+	return str(actor.ambition)
+
+static func assign_company_service(world, sector: String, director: int, vessel: Dictionary, home: int) -> bool:
+	match sector:
+		"liner":
+			return Economy.assign_passenger_liner(world, int(vessel.id), [], director).ok
+		"construction":
+			return world.ConstructionContract.assign_contractor(world, int(vessel.id), home, director).ok
+	return false
+
+static func _register_service_company(world, sector: String, actor: Dictionary, station: Dictionary, vessel: Dictionary, reserve: int) -> int:
+	if not assign_company_service(world, sector, int(actor.id), vessel, int(station.id)):
+		return 0
+	var label := _company_name(world, actor, station, sector)
+	var fid: int = world.incorporate(label, int(actor.id), int(station.id), false, reserve, vessel)
+	if fid > 0:
+		world.firms[fid].sector = sector
+		actor.ambition = "acquire_equity"
+	return fid
+
+static func _npc_found_service_company(world, actor: Dictionary, station: Dictionary, ambition: String) -> bool:
+	if ambition not in ["found_construction", "found_liner"]:
+		return false
+	var aid := int(actor.id)
+	for fm: Dictionary in world.firms.values():
+		if int(fm.get("director", 0)) == aid:
+			return false
+	var existing_kind := 0
+	var sector := "construction" if ambition == "found_construction" else "liner"
+	for fm: Dictionary in world.firms.values():
+		if str(fm.get("sector", "")) == sector:
+			existing_kind += 1
+	if existing_kind >= 4:
+		return false
+	var reserve_cash := 600 if ambition == "found_construction" else 400
+	# Option A: Contribute an existing docked civilian ship for a passenger liner company
+	if ambition == "found_liner" and int(actor.wallet) >= reserve_cash + 200:
+		for sh: Dictionary in world.ships.values():
+			if int(sh.owner) == aid and int(sh.dock) == int(station.id) and int(sh.captain) not in [0, world.player] and Economy.contributable(sh) and sh.get("job", {}).get("kind", "") != "客运":
+				var fid := _register_service_company(world, sector, actor, station, sh, reserve_cash)
+				if fid > 0:
+					world.event("%s 带船在 %s 创办了「%s」。" % [actor.name, station.name, world.firms[fid].name])
+					return true
+	if Economy.Industry.Module.YARD not in station.modules:
+		return false
+	var target_kind := -1
+	if ambition == "found_construction":
+		var g_kind := Hulls.kind_for_id("gantry_ca")
+		if g_kind >= 0 and int(station.hulls[g_kind]) > 0 and Hulls.model_limit(station, g_kind):
+			target_kind = g_kind
+	else:
+		for k in station.hulls.size():
+			if int(station.hulls[k]) > 0 and Hulls.model_limit(station, k) and int(Hulls.MODELS[k].cargo) >= 12 and int(Hulls.MODELS[k].size) <= 1:
+				target_kind = k
+				break
+	if target_kind < 0:
+		return false
+	if sector == "liner" and Economy.build_passenger_route(world, int(station.id), actor.flag).size() < 2:
+		return false
+	var hull_price := int(Economy.ship_quote(station, target_kind).price)
+	var needed := hull_price + reserve_cash + 55
+	if hull_price <= 0:
+		return false
+	# Pool capital with up to 3 wealthy local co-investors (joint-venture startup!)
+	var founder_avail := maxi(0, int(actor.wallet) - 100)
+	var partners: Array[Dictionary] = []
+	var pooled := founder_avail
+	if pooled < needed:
+		for peer: Dictionary in world.people.values():
+			if partners.size() >= 3 or pooled >= needed:
+				break
+			if peer.alive and int(peer.id) != aid and int(peer.id) != world.player and int(peer.id) != world.regency and int(peer.loc) == int(station.id) and int(peer.wallet) >= 700 and age(world, peer) >= 18:
+				var contrib := mini(int(peer.wallet) - 300, needed - pooled)
+				if contrib >= 300:
+					partners.append({"id": int(peer.id), "amount": contrib})
+					pooled += contrib
+	if pooled < needed:
+		return false
+	var busy := {}
+	for f in world.factions.values():
+		if f.get("alive", false):
+			busy[int(f.get("leader", 0))] = true
+	for st in world.ports.values():
+		busy[int(st.get("manager", 0))] = true
+	for fm in world.firms.values():
+		busy[int(fm.get("director", 0))] = true
+	var cap_id := 0
+	for idle: Dictionary in world.people.values():
+		if idle.alive and int(idle.id) != aid and int(idle.id) != world.player and int(idle.id) != world.regency and int(idle.loc) == int(station.id) and int(idle.ship) == 0 and int(idle.employer) == 0 and int(idle.get("transit_ship", 0)) == 0 and not busy.has(int(idle.id)) and age(world, idle) >= 18:
+			cap_id = int(idle.id)
+			break
+	if cap_id == 0:
+		return false
+	var paid := Economy.withdraw_priced_hull(station, target_kind, hull_price + 200)
+	if paid <= 0:
+		return false
+	# Collect co-investor contributions into founder's escrow temporarily so incorporate() settles cleanly
+	var total_partner_cash := 0
+	for pt in partners:
+		world.credit(int(pt.id), -int(pt.amount))
+		world.credit(aid, int(pt.amount))
+		total_partner_cash += int(pt.amount)
+	world.credit(aid, -(paid + 55))
+	world.Treasury.post(world, station, paid, "人物合资购舰立社", false)
+	world.credit(cap_id, 55)
+	var sid: int = world.ship(target_kind, aid, cap_id, int(actor.flag), int(station.system), station.pos, int(station.id))
+	world.people[cap_id].employer = aid
+	world.people[cap_id].ship = sid
+	world.people[cap_id].loc = int(station.id)
+	var fid := _register_service_company(world, sector, actor, station, world.ships[sid], reserve_cash)
+	if fid <= 0:
+		world.ships[sid].job = {"kind": "贸易", "automatic": true, "label": "自动贸易", "phase": 0}
+		return false
+	# Allocate proportional shares from founder to co-investors
+	if total_partner_cash > 0 and world.firms.has(fid):
+		var founder_shares := int(actor.shares.get(fid, 0))
+		var total_invested := maxi(1, paid + reserve_cash)
+		for pt in partners:
+			var share_grant := clampi(roundi(float(founder_shares) * float(pt.amount) / float(total_invested)), 1, maxi(1, founder_shares - 10))
+			if int(actor.shares.get(fid, 0)) > share_grant + 5:
+				actor.shares[fid] = int(actor.shares[fid]) - share_grant
+				var p_dict: Dictionary = world.people[int(pt.id)]
+				p_dict.shares[fid] = int(p_dict.shares.get(fid, 0)) + share_grant
+	world.event("%s%s在 %s 创办了「%s」，由代理人 %s 执掌首舰。" % [actor.name, "联合股东" if not partners.is_empty() else "", station.name, world.firms[fid].name, world.name_of(cap_id)])
+	return true
+
+static func _npc_invest_step(world, actor: Dictionary, arch: String) -> void:
+	var loc_id := int(actor.get("loc", 0))
+	if loc_id == 0 or not world.ports.has(loc_id) or int(actor.wallet) < 2200:
+		return
+	var station: Dictionary = world.ports[loc_id]
+	if int(station.get("build", 0)) != 0 or station.get("landing_only", false):
+		return
+	var ambition := npc_choose_ambition(world, actor, arch)
+	if _npc_found_service_company(world, actor, station, ambition):
+		return
+	# If actively saving for a service company, keep cash reserve instead of dispersing into random stock
+	if ambition in ["found_construction", "found_liner"] and int(actor.wallet) < 6500:
+		return
+	var aid := int(actor.id)
+	# 1. Buy available station treasury equity or company treasury shares (closed-loop)
+	if station.has("equity") and int(station.equity.get("treasury_units", 0)) > 0:
+		var u_price: int = world.StationEquity.unit_price(station)
+		var afford := mini(int(station.equity.treasury_units), mini(3, (int(actor.wallet) - 1000) / maxi(1, u_price)))
+		if afford > 0:
+			var cost := afford * u_price
+			world.credit(aid, -cost)
+			world.Treasury.post(world, station, cost, "人物认购站股", false)
+			station.equity.treasury_units = int(station.equity.treasury_units) - afford
+			station.equity.people[aid] = int(station.equity.people.get(aid, 0)) + afford
+			return
+	var firm_id := int(station.get("firm", 0))
+	if firm_id > 0 and world.firms.has(firm_id):
+		var firm: Dictionary = world.firms[firm_id]
+		if int(firm.get("treasury_shares", 0)) > 0:
+			var s_price: int = world.Equity.share_price(world, firm_id)
+			var afford := mini(int(firm.treasury_shares), mini(3, (int(actor.wallet) - 1000) / maxi(1, s_price)))
+			if afford > 0:
+				var cost := afford * s_price
+				world.credit(aid, -cost)
+				firm.treasury = int(firm.treasury) + cost
+				firm.treasury_shares = int(firm.treasury_shares) - afford
+				actor.shares[firm_id] = int(actor.shares.get(firm_id, 0)) + afford
+				return
+	# 2. Wealthy NPC commissions a private freighter at local shipyard and hires a local captain
+	if int(actor.wallet) < 4200 or Economy.Industry.Module.YARD not in station.modules:
+		return
+	var owned_ships := 0
+	for sh: Dictionary in world.ships.values():
+		if int(sh.get("owner", 0)) == aid:
+			owned_ships += 1
+	if owned_ships >= 2:
+		return
+	var best_kind := -1
+	var best_price := 0
+	for kind in station.hulls.size():
+		if int(station.hulls[kind]) <= 0 or not Hulls.model_limit(station, kind):
+			continue
+		var model: Dictionary = Hulls.MODELS[kind]
+		if int(model.cargo) < 18:
+			continue
+		var p: int = Economy.ship_quote(station, kind).price
+		if p > 0 and p + 600 <= int(actor.wallet) and p > best_price:
+			best_price = p
+			best_kind = kind
+	if best_kind < 0:
+		return
+	var busy := {}
+	for f in world.factions.values():
+		if f.get("alive", false):
+			busy[int(f.get("leader", 0))] = true
+	for st in world.ports.values():
+		busy[int(st.get("manager", 0))] = true
+	for fm in world.firms.values():
+		busy[int(fm.get("director", 0))] = true
+	var captain_id := 0
+	for idle: Dictionary in world.people.values():
+		if idle.alive and int(idle.id) != aid and int(idle.id) != world.player and int(idle.id) != world.regency and int(idle.loc) == loc_id and int(idle.ship) == 0 and int(idle.employer) == 0 and int(idle.get("transit_ship", 0)) == 0 and not busy.has(int(idle.id)) and age(world, idle) >= 18:
+			captain_id = int(idle.id)
+			break
+	if captain_id == 0:
+		return
+	var withdrawn := Economy.withdraw_priced_hull(station, best_kind, int(actor.wallet) - 200)
+	if withdrawn <= 0:
+		return
+	world.credit(aid, -(withdrawn + 55))
+	world.Treasury.post(world, station, withdrawn, "人物购舰投资", false)
+	world.credit(captain_id, 55)
+	var new_sid: int = world.ship(best_kind, aid, captain_id, int(actor.flag), int(station.system), station.pos, loc_id)
+	world.people[captain_id].employer = aid
+	world.people[captain_id].ship = new_sid
+	world.people[captain_id].loc = loc_id
+	world.ships[new_sid].job = {"kind": "贸易", "automatic": true, "label": "自动贸易", "phase": 0}
+	world.ships[new_sid].default_behavior = world.ships[new_sid].job.duplicate(true)
+
+static func _pick_liner_destination(world, actor: Dictionary, origin_port: int) -> int:
+	var options: Array[int] = []
+	for sh: Dictionary in world.ships.values():
+		if sh.get("job", {}).get("kind", "") != "客运":
+			continue
+		var route: Array = sh.job.get("route", [])
+		if origin_port not in route:
+			continue
+		for pid in route:
+			var id := int(pid)
+			if id != origin_port and id not in options and world.ports.has(id) and int(world.ports[id].build) == 0 and not world.hostile(int(actor.flag), int(world.ports[id].flag)):
+				options.append(id)
+	if options.is_empty():
+		return 0
+	var ambition := str(actor.get("ambition", ""))
+	var best_id := options[0]
+	var best_score := -INF
+	for pid in options:
+		var st: Dictionary = world.ports[pid]
+		var score := float(st.get("stability", 50.0)) - float(st.get("shortage", 0)) * 4.0 + float(int(st.get("treasury", 0))) / 2500.0
+		if ambition in ["found_construction", "found_liner", "merchant_fleet"] and Economy.Industry.Module.YARD in st.modules:
+			score += 28.0
+		if ambition == "survive_flee":
+			score += float(st.get("stability", 50.0)) * 0.8
+		score += float(world.rng.randi_range(0, 18))
+		if score > best_score:
+			best_score = score
+			best_id = pid
+	return best_id
 
 static func npc_autonomous_step(world) -> void:
 	var slot: int = world.day % 30
@@ -1179,6 +1693,55 @@ static func npc_autonomous_step(world) -> void:
 		var actor: Dictionary = world.people[person_id]
 		if not actor.alive or age(world,actor) < 18:
 			continue
+		if int(actor.get("transit_ship", 0)) != 0:
+			continue
+		var arch := npc_archetype(actor)
+		var is_independent: bool = world.reports_to(actor) == 0 and not leader_ids.has(person_id)
+		# Independent unattached NPCs at a shipyard prioritize buying/upgrading their work ship before discretionary consumption
+		if is_independent and actor.ship == 0 and actor.loc > 0 and world.ports.has(actor.loc):
+			var st_buy: Dictionary = world.ports[actor.loc]
+			if st_buy.build == 0 and actor.wallet > 40 and Economy.Industry.Module.YARD in st_buy.modules:
+				var role_pref := "巡逻" if arch == "mercenary" else ""
+				var kind := choose_work_ship(actor,st_buy,{},role_pref)
+				if kind >= 0 and npc_buy_ship(world,actor,st_buy,kind,role_pref) > 0:
+					world.event("%s 在 %s 购入%s，启程谋生。" % [actor.name,st_buy.name,world.HULLS[kind]])
+					continue
+		if is_independent and actor.ship != 0:
+			var cur_v: Dictionary = world.ships.get(actor.ship, {})
+			if not cur_v.is_empty() and cur_v.owner == actor.id and cur_v.dock != 0 and world.ports.has(cur_v.dock) and not cur_v.has("reservation") and cur_v.cargo.all(func(q): return q == 0):
+				var up_st: Dictionary = world.ports[cur_v.dock]
+				var up_role: String = cur_v.job.get("kind", "贸易")
+				if Economy.Industry.Module.YARD in up_st.modules and up_role in ["贸易", "采矿", "巡逻"]:
+					var up_kind := choose_work_ship(actor, up_st, cur_v, up_role)
+					if up_kind >= 0:
+						var old_id: int = cur_v.id
+						var new_id := npc_buy_ship(world, actor, up_st, up_kind, up_role)
+						if new_id > 0:
+							var hired := 0
+							if actor.wallet >= 95 + mini(24, Hulls.MODELS[up_kind].cargo) * Economy.price(up_st, Economy.Industry.Ware.RATIONS, true):
+								for idle in world.people.values():
+									if idle.id != actor.id and idle.id != world.player and idle.alive and idle.loc == up_st.id and idle.ship == 0 and idle.employer == 0 and age(world, idle) >= 18:
+										world.credit(actor.id, -55)
+										world.credit(idle.id, 55)
+										idle.employer = actor.id
+										idle.ship = old_id
+										idle.loc = up_st.id
+										world.ships[old_id].captain = idle.id
+										world.ships[old_id].job = {"kind": "贸易", "automatic": true, "label": "自动贸易", "phase": 0}
+										world.ships[old_id].default_behavior = world.ships[old_id].job.duplicate(true)
+										hired = idle.id
+										break
+							if hired == 0:
+								world.ships[old_id].captain = 0
+								world.ships[old_id].job = {"kind": "停泊待命", "source": up_st.id, "system": up_st.system}
+							world.event("%s 换乘更适合%s的%s。" % [actor.name, up_role, world.HULLS[up_kind]])
+							continue
+		# Universal Character Life Layer: ALL living adult NPCs choose ambition, consume, socialize, and invest
+		npc_choose_ambition(world, actor, arch)
+		_npc_consume_step(world, actor, arch)
+		npc_social_step(world, actor, arch)
+		_npc_invest_step(world, actor, arch)
+		_npc_neutral_realm_step(world, actor)
 		if actor.spouse == 0 and actor.loc > 0 and world.rng.randf() < 0.25:
 			var married := false
 			for other: Dictionary in world.people.values():
@@ -1187,33 +1750,32 @@ static func npc_autonomous_step(world) -> void:
 					break
 			if married:
 				continue
-		if world.reports_to(actor) != 0 or leader_ids.has(person_id):
+		# Independent Career Layer: unattached NPCs run their own ships or book passenger liners
+		if not is_independent:
 			continue
-		var arch := npc_archetype(actor)
-		npc_social_step(world, actor, arch)
 		_npc_enterprise_and_realm_step(world, actor)
 		if actor.ship == 0:
 			if actor.loc == 0 or not world.ports.has(actor.loc):
 				continue
-			var station: Dictionary = world.ports[actor.loc]
-			if station.build == 0 and actor.wallet > 40 and Economy.Industry.Module.YARD in station.modules:
-				var role_pref := "巡逻" if arch == "mercenary" else ""
-				var kind := choose_work_ship(actor,station,{},role_pref)
-				if kind >= 0 and npc_buy_ship(world,actor,station,kind,role_pref) > 0:
-					world.event("%s 在 %s 购入%s，启程谋生。" % [actor.name,station.name,world.HULLS[kind]])
-					continue
-			if world.rng.randf() < 0.14:
-				var ports: Array = world.ports.values()
-				var dest: Dictionary = ports[world.rng.randi_range(0, ports.size() - 1)]
-				if dest.build == 0 and not world.hostile(actor.flag, dest.flag):
-					actor.loc = dest.id
+			var flee_chance := 0.70 if str(actor.get("ambition", "")) == "survive_flee" else 0.14
+			if int(actor.get("travel_dest", 0)) == 0 and world.rng.randf() < flee_chance:
+				var dest_id := _pick_liner_destination(world, actor, int(actor.loc))
+				if dest_id != 0 and int(actor.wallet) >= Economy.ticket_price(world, int(actor.loc), dest_id):
+					actor.travel_dest = dest_id
 		else:
 			var vessel: Dictionary = world.ships.get(actor.ship, {})
 			if vessel.is_empty():
 				actor.ship = 0
 				continue
 			if arch == "mercenary" and vessel.job.get("kind", "") == "巡逻" and vessel.dock == 0 and world.rng.randf() < 0.25:
-				world.credit(actor.id, world.rng.randi_range(18, 42))
+				var pay: int = world.rng.randi_range(18, 42)
+				var sys_ports: Array = world.systems[vessel.system].ports if vessel.system >= 0 and vessel.system < world.systems.size() else []
+				for spid in sys_ports:
+					var sp: Dictionary = world.ports.get(int(spid), {})
+					if not sp.is_empty() and int(sp.build) == 0 and not world.hostile(int(actor.flag), int(sp.flag)):
+						if world.Treasury.post(world, sp, -pay, "护航巡逻赏金", true):
+							world.credit(actor.id, pay)
+						break
 			if vessel.owner == actor.id and vessel.dock != 0 and world.ports.has(vessel.dock) and not vessel.has("reservation") and vessel.cargo.all(func(q): return q == 0):
 				var dock_st: Dictionary = world.ports[vessel.dock]
 				if Economy.Industry.Module.YARD in dock_st.modules:
@@ -1390,6 +1952,9 @@ static func advance(world) -> void:
 		world.player = world.regency
 		world.regency = 0
 		world.regent = 0
+		var adult: Dictionary = world.active()
+		if adult.loc == 0 and adult.ship == 0:
+			adult.loc = landing(world, adult)
 		world.attention = true
 		world.event(world.name_of(world.player) + " 已成年，摄政结束。")
 		Society.offer(world, "on_succession")
@@ -1397,6 +1962,7 @@ static func advance(world) -> void:
 	if world.day % 45 == 0:
 		npc_colonize(world)
 	if world.day % 90 == 0:
+		_politics_diplomacy_step(world)
 		appointments(world)
 		settle_captain_payroll(world)
 		refresh_station_residents(world)
@@ -1406,10 +1972,14 @@ static func advance(world) -> void:
 			var firm: Dictionary = world.firms[firm_id]
 			var director: Dictionary = world.people[firm.director]
 			var host: int = world.ports[firm.hq].flag
-			if director.id != world.player and host >= 0:
+			if director.id != world.player:
 				firm.embargo = world.NEUTRAL
 				for flag in world.factions:
-					if world.factions[flag].alive and world.hostile(host, flag):
+					if not world.factions[flag].alive:
+						continue
+					var f_leader := int(world.factions[flag].get("leader", 0))
+					var personal_feud: bool = f_leader != 0 and world.people.has(f_leader) and (opinion(world, director.id, f_leader) <= -50 or director.get("relations", {}).get(f_leader, "") == "rival")
+					if (host >= 0 and world.hostile(host, flag)) or personal_feud:
 						firm.embargo = flag
 						break
 		for flag in world.factions:
@@ -1418,4 +1988,68 @@ static func advance(world) -> void:
 				var elected := select_leader(world, flag, group.capital)
 				if group.leader != elected:
 					group.leader = elected
+					group.npc = elected != world.player
 					world.event("%s 议会选出了新执政官 %s。" % [group.name, world.name_of(elected)])
+
+## Character-driven inter-faction diplomacy: alliances, dynastic marriages, and republican election campaigning.
+static func _politics_diplomacy_step(world) -> void:
+	var alive_flags: Array[int] = []
+	for f_id in world.factions:
+		if world.factions[f_id].get("alive", false):
+			alive_flags.append(int(f_id))
+	# 1. Leader-driven alliances, breakups & cross-faction dynastic marriages
+	for i in range(alive_flags.size()):
+		for j in range(i + 1, alive_flags.size()):
+			var fa := alive_flags[i]
+			var fb := alive_flags[j]
+			var ga: Dictionary = world.factions[fa]
+			var gb: Dictionary = world.factions[fb]
+			if not ga.get("npc", false) or not gb.get("npc", false):
+				continue
+			var la: Dictionary = world.people.get(int(ga.leader), {})
+			var lb: Dictionary = world.people.get(int(gb.leader), {})
+			if la.is_empty() or lb.is_empty() or not la.alive or not lb.alive:
+				continue
+			var state := int(world.treaty(fa, fb).state)
+			if state == -1:
+				continue
+			var op_ab := opinion(world, int(la.id), int(lb.id))
+			var op_ba := opinion(world, int(lb.id), int(la.id))
+			var is_kin := kin(world, int(la.id), int(lb.id))
+			var shared_enemy := false
+			for fk in alive_flags:
+				if fk != fa and fk != fb and world.hostile(fa, fk) and world.hostile(fb, fk):
+					shared_enemy = true
+					break
+			# Cross-faction dynastic marriage between unmarried noble leaders
+			if state >= 0 and la.noble and lb.noble and int(la.spouse) == 0 and int(lb.spouse) == 0 and int(la.get("gender", 0)) != int(lb.get("gender", 1)) and op_ab >= -10 and op_ba >= -10 and world.rng.randf() < 0.25:
+				if marry(world, int(la.id), int(lb.id)):
+					is_kin = true
+					world.event("联姻外交：%s 与 %s 缔结王室联姻。" % [ga.name, gb.name])
+			# Form defensive alliance
+			if state == 0 and (is_kin or shared_enemy or (op_ab >= 25 and op_ba >= 25)) and world.rng.randf() < (0.45 if is_kin or shared_enemy else 0.18):
+				world.set_treaty(fa, fb, 1)
+				world.event("外交同盟：%s 与 %s 缔结防御同盟。" % [ga.name, gb.name])
+			# Break alliance on deep personal feud
+			elif state == 1 and (op_ab <= -45 or op_ba <= -45 or la.get("relations", {}).get(int(lb.id), "") == "rival"):
+				world.set_treaty(fa, fb, 0)
+				world.event("盟约破裂：%s 与 %s 因领袖反目解除同盟。" % [ga.name, gb.name])
+	# 2. Republican election campaigning (closed-loop public port subsidies for endorsement votes)
+	if world.day % 1440 >= 1260:
+		for f_id in alive_flags:
+			var grp: Dictionary = world.factions[f_id]
+			if int(grp.regime) != 1:
+				continue
+			for p: Dictionary in world.people.values():
+				if not p.alive or int(p.flag) != f_id or int(p.id) == world.player or int(p.wallet) < 900 or age(world, p) < 22:
+					continue
+				var st: Dictionary = world.ports.get(int(p.loc), {})
+				if st.is_empty() or int(st.build) != 0 or int(st.flag) != f_id:
+					continue
+				if world.rng.randf() < 0.35:
+					var spend := mini(320, int(p.wallet) - 500)
+					if spend >= 120:
+						world.credit(int(p.id), -spend)
+						world.Treasury.post(world, st, spend, "竞选公共赞助", false)
+						p.endorsement = int(p.get("endorsement", 0)) + roundi(float(spend) * 0.6)
+						p.prestige = int(p.get("prestige", 0)) + 2

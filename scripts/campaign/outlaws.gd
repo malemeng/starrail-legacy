@@ -80,6 +80,29 @@ static func establish(world) -> void:
 		sites[group] = system
 		for slot in spec.fleet.size():
 			base.members.append(member(world, group, system, base, slot))
+		if not base.members.is_empty():
+			var lead_ship: Dictionary = world.ships.get(base.members[0], {})
+			if not lead_ship.is_empty():
+				base.boss_id = int(lead_ship.get("captain", 0))
+
+static func boss_for(world, group: String) -> Dictionary:
+	var sites: Dictionary = world.campaign.get("outlaw_bases", {})
+	if not sites.has(group):
+		return {}
+	var system: int = sites[group]
+	var base: Dictionary = world.systems[system].get("outlaw_base", {})
+	if base.is_empty():
+		return {}
+	var bid := int(base.get("boss_id", 0))
+	if bid != 0 and world.people.has(bid) and world.people[bid].get("alive", false):
+		return world.people[bid]
+	for sid in base.get("members", []):
+		var sh: Dictionary = world.ships.get(int(sid), {})
+		var cap := int(sh.get("captain", 0))
+		if cap != 0 and world.people.has(cap) and world.people[cap].get("alive", false):
+			base.boss_id = cap
+			return world.people[cap]
+	return {}
 
 static func on_roster(world, id: int, group: String) -> bool:
 	var ship: Dictionary = world.ships.get(id, {})
@@ -189,9 +212,11 @@ static func advance(world) -> void:
 							ship.pos = Vector2(ship.pos).move_toward(ship.job.waypoint, 160.0)
 							if ship.pos.distance_to(prey.pos) <= 320.0:
 								var defender_id := 0
+								var defender_captain := 0
 								for esc: Dictionary in world.ships.values():
 									if esc.id != ship.id and esc.hp > 0 and not esc.layer and esc.dock == 0 and esc.system == prey.system and esc.flag == prey.flag and esc.job.get("kind", "") in ["护航", "巡逻"] and Vector2(esc.pos).distance_to(prey.pos) <= 420.0:
 										defender_id = esc.id
+										defender_captain = int(esc.get("captain", 0))
 										break
 								var stolen := 0
 								var free_hold: int = world.cargo_free(ship)
@@ -210,14 +235,14 @@ static func advance(world) -> void:
 									ship.hp -= 24
 									prey.hp -= 12
 									if ship.hp <= 0:
-										world.destruction(ship.id, defender_id)
+										world.destruction(ship.id, defender_captain)
 										continue
 								else:
 									prey.hp -= 28
 								if stolen > 0:
 									world.event("裂缝海盗在 %s 截击商船 %s，掠夺 %d 单位货物。" % [world.systems[prey.system].name, world.HULLS[prey.kind], stolen])
 								if prey.hp <= 0:
-									world.destruction(prey.id, ship.id)
+									world.destruction(prey.id, int(ship.get("captain", 0)))
 						continue
 					if ship.system == system:
 						var raid_targets: Array = []
@@ -225,8 +250,26 @@ static func advance(world) -> void:
 							if p.build == 0 and not p.get("landing_only", false) and p.system != system:
 								raid_targets.append(p)
 						if not raid_targets.is_empty():
-							var pick_idx: int = absi(hash([world.settings.seed, int(world.day) / 18, int(slot)])) % raid_targets.size()
-							var target_port: Dictionary = raid_targets[pick_idx]
+							var boss := boss_for(world, group)
+							var target_port: Dictionary = raid_targets[0]
+							if not boss.is_empty():
+								var best_score := -INF
+								for cand: Dictionary in raid_targets:
+									var score := float(int(cand.get("treasury", 0))) * 0.001
+									var mgr := int(cand.get("manager", 0))
+									if mgr != 0:
+										score -= float(int(boss.get("opinions", {}).get(mgr, 0))) * 0.15
+									if cand.flag >= 0:
+										var fl := int(world.factions.get(cand.flag, {}).get("leader", 0))
+										if fl != 0:
+											score -= float(int(boss.get("opinions", {}).get(fl, 0))) * 0.10
+									score += float(absi(hash([world.settings.seed, int(world.day) / 18, int(slot), int(cand.id)])) % 100) * 0.05
+									if score > best_score:
+										best_score = score
+										target_port = cand
+							else:
+								var pick_idx: int = absi(hash([world.settings.seed, int(world.day) / 18, int(slot)])) % raid_targets.size()
+								target_port = raid_targets[pick_idx]
 							ship.fuel = maxf(ship.fuel, float(world.Hulls.MODELS[ship.kind].fuel_tank))
 							ship.travel = {"waypoints": [target_port.system], "stop": target_port.pos, "port": 0}
 							continue

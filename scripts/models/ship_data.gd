@@ -49,6 +49,13 @@ static func decode(data: Dictionary, ware_count: int) -> Dictionary:
 			return {}
 		if lease.port <= 0 or lease.lessor <= 0 or lease.daily_rent <= 0 or lease.started < 0:
 			return {}
+	if data.has("passengers"):
+		var pax: Variant = data.passengers
+		if not pax is Array:
+			return {}
+		for pid in pax:
+			if not pid is int or pid <= 0:
+				return {}
 	var kind := Hulls.kind_for_id(str(data.get("hull_id", "")))
 	if kind < 0 or not data.get("fit") is Dictionary or not data.get("battle") is Dictionary:
 		return {}

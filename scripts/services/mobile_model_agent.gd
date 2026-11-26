@@ -2,7 +2,7 @@ extends Node
 
 signal finished(message: String)
 
-const ACTIONS := ["market_quote","trade","navigate_to_station","step","wait","supply_fleet","ship_quote","buy_ship","set_default_behavior","assign_ship","debug_ship","incorporate_station","incorporate_ship","contribute_ship","freight_offer","accept_freight","deliver_freight","accept_first_job","deliver_first_job","claim_return_bonus","buyout_charter","set_intent","start_pretext","declare_company_war","sign_company_peace"]
+const ACTIONS := ["market_quote","trade","navigate_to_station","step","wait","supply_fleet","ship_quote","buy_ship","set_default_behavior","assign_ship","debug_ship","incorporate_station","incorporate_ship","contribute_ship","freight_offer","accept_freight","deliver_freight","accept_first_job","deliver_first_job","claim_return_bonus","buyout_charter","set_intent","start_pretext","declare_company_war","sign_company_peace","board_liner","disembark_liner","assign_passenger_liner","assign_contractor"]
 const FLIGHT_ACTIONS := ["depart","dock","waypoint","jump","mine_or_salvage","repair","refuel","sensor_ping","attack_target","autopilot","order","group","system","field_repair","hire_builder","cancel_builder","deploy_station","donate_materials","found_planet_port"]
 const PROMPT := "你正在操控《星轨遗产》的一名船长。根据目标和最新游戏状态选择工具。货物编号按 wares 的下标，舰船和港口编号从观测读取。通过 market_quote 和 trade 使用 ware、amount（正买负卖）。navigate_to_station 使用 port_id、auto_dock；step 使用 ticks(1-1800)、speed(1-5)、stop(arrival)。wait 使用 days(1-180)。先核实成交和靠港结果，再作下一步。可以连续调用工具；目标达成时用简短中文总结结束托管。"
 
@@ -250,7 +250,7 @@ static func compact_receipt(receipt: Dictionary) -> Dictionary:
 			compact[key] = receipt[key]
 	var state: Dictionary = receipt.get("state",{})
 	var view := {}
-	for key in ["day","screen","actor","system","targets","objective","notice","wares","waypoint","beacons","jump_allowed","contract"]:
+	for key in ["day","screen","actor","system","targets","objective","notice","wares","waypoint","beacons","jump_allowed","contract","passenger_liners"]:
 		if state.has(key):
 			view[key] = state[key]
 	if view.has("system"):
@@ -258,7 +258,7 @@ static func compact_receipt(receipt: Dictionary) -> Dictionary:
 	view.ship = fields(state.get("ship",{}),["id","hull_id","model","owner","firm","pos","dock","hp","fuel","crew","cargo","free_cargo","locked","shield","group","autopilot"])
 	view.ports = []
 	for port in state.get("ports",[]).slice(0,12):
-		view.ports.append(fields(port,["id","name","pos","hostile","construction_days","stock","prices"]))
+		view.ports.append(fields(port,["id","name","pos","hostile","construction_days","stock","buy","sell"]))
 	for key in ["targets","beacons"]:
 		if view.has(key):
 			view[key] = view[key].slice(0,12)

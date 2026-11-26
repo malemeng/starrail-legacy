@@ -388,7 +388,7 @@ func show_title() -> void:
 	if cli_agent_mode:
 		show_creator()
 		return
-	if is_instance_valid(mobile_runner):
+	if is_instance_valid(mobile_runner) or agent_bridge != null or smolagents_pid > 0:
 		_stop_takeover()
 	if arena != null and arena.active: arena.stop_arena(false)
 	playing = false
@@ -630,12 +630,18 @@ func apply_cheat(raw: String) -> String:
 			for p: Dictionary in world.ports.values():
 				if p.system == sys and p.build > 0:
 					p.build = 0
+					if p.modules.is_empty():
+						p.modules.append(p.module)
 					if not p.has("equity"):
 						world.Capital.register_site(p)
 					world.Economy.Industry.update_market(p)
 					done_count += 1
-				if p.system == sys and p.extension > 0:
-					p.extension = 0
+				if p.system == sys and p.expansion > 0 and p.extension >= 0:
+					p.expansion = 0
+					p.modules.append(p.extension)
+					world.Economy.Industry.update_market(p)
+					p.pop_cap += int(world.Economy.Industry.CONSTRUCTION.housing_expansion if p.extension == world.Economy.Industry.Module.HABITAT else world.Economy.Industry.CONSTRUCTION.standard_expansion)
+					p.extension = -1
 					done_count += 1
 			return "作弊码生效：当前星系 %d 项工程已立即竣工。" % done_count
 		"ship":
@@ -1980,7 +1986,7 @@ func load_game(path: String) -> bool:
 		return false
 	if arena != null and arena.active:
 		arena.stop_arena(false)
-	if is_instance_valid(mobile_runner):
+	if is_instance_valid(mobile_runner) or agent_bridge != null or smolagents_pid > 0:
 		_stop_takeover()
 	run_bridge()
 	say("已恢复同一宇宙；时间已暂停。")

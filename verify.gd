@@ -170,7 +170,7 @@ func inheritance() -> void:
 		Politics.die(world, original)
 		check(world.player == first.id and world.ports[first_station].owner == first.id and world.ships[inherited_ship].owner == first.id, "main estate")
 		check(world.ports[second_station].owner == (first.id if law else heirs[1]), "partition vs concentration")
-		check(first.shares[firm] == world.firms[firm].issued and world.firms[firm].director == first.id and first.ship == 0, "shares and appointment")
+		check(first.shares[firm] == world.firms[firm].issued and world.firms[firm].director == first.id and first.ship == inherited_ship, "shares and appointment")
 		if law == 0:
 			check(world.people[heirs[2]].wallet > 0, "unlanded child compensated")
 	var world := scenario("commoner", false)
@@ -248,8 +248,13 @@ func corporate_trade() -> void:
 
 func government_and_wars() -> void:
 	var world := scenario("war")
-	world.tick(3900)
-	check(world.chronicle.any(func(entry): return "被" in entry[1] and "夺取" in entry[1]), "NPC seize stations without player")
+	var occupied := false
+	for month in range(130):
+		world.tick(30)
+		occupied = world.ports.values().any(func(port): return port.has("occupied_from")) or world.chronicle.any(func(entry): return "战时占领" in entry[1])
+		if occupied or world.succession or world.attention:
+			break
+	check(occupied, "NPC seize stations without player")
 	# A single autonomous battle has a deterministic last-port loss condition.
 	var siege := scenario("last-port")
 	var last_port: int = siege.systems_owned(1)[0]
@@ -257,6 +262,9 @@ func government_and_wars() -> void:
 		if id != last_port:
 			siege.ports[id].flag = siege.NEUTRAL
 	siege.set_treaty(0, 1, -1)
+	# Keep these leaders fighting until the test offers a peace treaty.
+	for flag in [0, 1]:
+		siege.people[siege.factions[flag].leader].personality.boldness = 90
 	var capital: Dictionary = siege.ports[last_port]
 	capital.defense = 1
 	var fleet_id := siege.ship(Hulls.kind_for_reference("onslaught"), 0, 0, 0, capital.system, capital.pos)
@@ -309,6 +317,7 @@ func ui_flow() -> void:
 	game.test_profile = true
 	root.add_child(game)
 	await process_frame
+	game.show_creator()
 	game.creator.name.text = "外貌验证"
 	game.creator.seed.text = "航线验收"
 	game.creator.noble.select(1)

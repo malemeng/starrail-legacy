@@ -331,8 +331,18 @@ func _observe_inner() -> Dictionary:
 						"trait":world.TRAITS[other.trait],"traits":world.Society.trait_labels(other),
 						"spouse":other.spouse,"opinion":Politics.opinion(world,other.id,actor.id),
 						"relation":actor.get("relations",{}).get(other.id,""),"has_hook":actor.get("hooks",{}).has(other.id),
-						"roles":prof.get("roles",[]),"stats":other.stats,"marriage":Politics.marriage_terms(world,actor.id,other.id)})
+						"roles":prof.get("roles",[]),"stats":other.stats.to_dict(),"marriage":Politics.marriage_terms(world,actor.id,other.id)})
 			state.contacts = state.contacts.slice(0,32)
+			var liners_list := []
+			for liner: Dictionary in Economy.docked_liners(world, actor.loc):
+				var stops := []
+				for pid in liner.job.get("route", []):
+					var id := int(pid)
+					if id != actor.loc and world.ports.has(id):
+						stops.append({"port": id, "name": world.ports[id].name, "fare": Economy.passenger_fare(world, actor, liner, id)})
+				liners_list.append({"ship": liner.id, "passengers": liner.get("passengers", []).size(), "capacity": Economy.passenger_capacity(liner), "stops": stops})
+			if not liners_list.is_empty():
+				state.passenger_liners = liners_list
 		if not vessel.is_empty() and actor.loc == 0 and not game.galaxy:
 			var wreck_list := []
 			for wid in world.wrecks:
@@ -968,7 +978,7 @@ func _dispatch_inner(action: String, args: Dictionary) -> Dictionary:
 			return success({
 				"id":p.id,"name":p.name,"alive":p.alive,"age":Politics.age(world,p),"gender":"女" if int(p.get("gender",0)) == 1 else "男",
 				"noble":p.noble,"house":p.get("house",""),"flag":p.flag,"flag_name":world.flag_name(p.flag),
-				"trait":world.TRAITS[p.trait],"traits":world.Society.trait_labels(p),"stats":p.stats,
+				"trait":world.TRAITS[p.trait],"traits":world.Society.trait_labels(p),"stats":p.stats.to_dict(),
 				"stress":p.get("stress",0),"merit":p.get("merit",0),"wallet":p.wallet,
 				"loc":p.loc,"loc_name":world.ports[p.loc].name if p.loc != 0 and world.ports.has(p.loc) else "","ship":p.ship,
 				"roles":prof.get("roles",[]),
@@ -1602,9 +1612,42 @@ func _dispatch_inner(action: String, args: Dictionary) -> Dictionary:
 		"claim_return_bonus":
 			if not Story.return_to_port(world):
 				return failure("bonus_unavailable")
+		"board_liner":
+			var lship := integer(args, "ship", 0, 1, 2147483647)
+			var ldest := integer(args, "dest", 0, 1, 2147483647)
+			if lship <= 0 or ldest <= 0:
+				return failure("invalid_liner_args")
+			var fare := integer(args, "fare", -1, -1, 2147483647)
+			if fare < -1:
+				return failure("invalid_fare")
+			var bres := Economy.board_passenger(world, world.player, lship, ldest, fare)
+			if not bres.get("ok", false):
+				return failure(str(bres.get("reason", "board_liner_failed")))
+			return success(bres)
+		"disembark_liner":
+			if not Economy.disembark_passenger(world, world.player):
+				return failure("not_on_docked_liner")
+		"assign_passenger_liner":
+			var pship := integer(args, "ship", 0, 1, 2147483647)
+			if pship <= 0:
+				return failure("invalid_ship")
+			var proute: Array = args.get("route", []) if args.get("route", []) is Array else []
+			var pres := Economy.assign_passenger_liner(world, pship, proute)
+			if not pres.get("ok", false):
+				return failure(str(pres.get("reason", "assign_passenger_liner_failed")))
+			return success(pres)
+		"assign_contractor":
+			var cship := integer(args, "ship", 0, 1, 2147483647)
+			if cship <= 0:
+				return failure("invalid_ship")
+			var chome := integer(args, "home_port", 0, 0, 2147483647)
+			var cres: Dictionary = world.ConstructionContract.assign_contractor(world, cship, maxi(0, chome))
+			if not cres.get("ok", false):
+				return failure(str(cres.get("reason", "assign_contractor_failed")))
+			return success(cres)
 		"group":
 			var auto: Variant = args.get("toggle_auto",false)
-			if vessel.is_empty() or vessel.dock != 0 or game.galaxy or not auto is bool or not game.flight.select_group(vessel,integer(args,"group",0,1,3),auto):
+			if vessel.is_empty() or vessel.dock != 0 or game.galaxy or not auto is bool or not game.flight.select_group(vessel,integer(args,"group",0,0,3),auto):
 				return failure("invalid_group")
 		"vent","system":
 			if vessel.is_empty() or vessel.dock != 0 or game.galaxy:
