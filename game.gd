@@ -94,6 +94,8 @@ var audio: Node
 var audio_button: Button
 var last_audio_serial := 0
 var side_panel: Control
+var sidebar_page := ""
+var sidebar_positions := {}
 var side_toggle: Button
 var side_collapsed := false
 var toast_panel: PanelContainer
@@ -265,6 +267,8 @@ func clear(parent: Node) -> void:
 		child.queue_free()
 
 func reset_layout() -> void:
+	sidebar_page = ""
+	sidebar_positions.clear()
 	trade_table = null
 	entity_menus.covered_panels.clear()
 	if glossary.is_node_ready():
@@ -832,7 +836,7 @@ func run_bridge() -> void:
 		canvas.visible = false
 	dock_view.stage = preload("res://scripts/ui/dock_overlay.tscn").instantiate()
 	if mobile_play:
-		dock_view.stage.custom_minimum_size = Vector2(550,400)
+		dock_view.stage.custom_minimum_size = Vector2.ZERO
 	dock_view.stage.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	stage_wrap.add_child(dock_view.stage)
 	toast_panel = PanelContainer.new()
@@ -1759,8 +1763,8 @@ func refresh() -> void:
 		arena_refresh_requested = true
 		return
 	var scroll_node: ScrollContainer = side_panel.get_node_or_null("Column/Scroll") if is_instance_valid(side_panel) else null
-	if scroll_node != null:
-		UIKit.scroll_pos[tab] = scroll_node.scroll_vertical
+	if scroll_node != null and not sidebar_page.is_empty():
+		sidebar_positions[sidebar_page] = scroll_node.scroll_vertical
 	clear(body)
 	if not entity_menus.covered_panels.is_empty():
 		button(body,"返回刚才的窗口",entity_menus.restore_panels)
@@ -1772,6 +1776,11 @@ func refresh() -> void:
 				btn.button_pressed = is_cur
 				btn.add_theme_color_override("font_color", GOLD if is_cur else INK)
 	var docked := dock_view.sync()
+	sidebar_page = tab
+	if tab == "港口" and docked:
+		sidebar_page += "/%d/%s" % [dock_view.station_id, dock_view.mode]
+		if dock_view.mode == "yard":
+			sidebar_page += "/%d" % Hulls.MODELS[dock_view.model_id].size
 	if mobile_play and docked != mobile_was_docked:
 		mobile_was_docked = docked
 		var show_panel: bool = docked or world.active().has("transit_ship")
@@ -1813,7 +1822,7 @@ func refresh() -> void:
 	if docked and tab != "港口" and dock_view.rendered.is_empty():
 		dock_view.paint(world.ports[dock_view.station_id])
 	if scroll_node != null:
-		var saved_scroll := int(UIKit.scroll_pos.get(tab, 0))
+		var saved_scroll := int(sidebar_positions.get(sidebar_page, 0))
 		scroll_node.set_deferred("scroll_vertical", saved_scroll)
 
 func step_simulation(move: Vector2, shield: bool, fire: bool, aim: Vector2, aiming: bool, boost: bool = false) -> void:
@@ -1956,6 +1965,8 @@ func _notification(what: int) -> void:
 			set_tactics(false)
 		elif playing and system_chart:
 			toggle_system_chart()
+		elif playing and dock_view.stage.is_visible_in_tree() and dock_view.mode != "welcome":
+			dock_view.open_section("welcome")
 		elif playing:
 			confirm_title()
 		elif has_node("TitleMenu"):

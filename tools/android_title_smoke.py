@@ -8,7 +8,7 @@ import subprocess
 import time
 import xml.etree.ElementTree as ET
 
-from PIL import Image
+from PIL import Image, ImageChops, ImageStat
 
 PACKAGE = "com.malemeng.starraillegacy"
 ACTIVITY = PACKAGE + "/com.godot.game.GodotAppLauncher"
@@ -159,6 +159,54 @@ def check_button_scroll(directory):
     print("Dragged from an option and a button in both directions; portrait unchanged", flush=True)
 
 
+def dock_button(frame, index):
+    # The dock fills the space to the left of the fixed-width management panel.
+    # Locate the selected button by its theme fill, away from its text.
+    w, h = frame.size
+    left, right = h * .056, w - h * .70
+    width = (right - left) / 5
+    sample_x = round(left + (index + .20) * width)
+    run = 0
+    for y in range(round(h * .88), round(h * .69), -1):
+        if frame.getpixel((sample_x, y)) == (37, 71, 99):
+            run += 1
+            if run >= h * .025:
+                return round(left + (index + .5) * width), y
+        else:
+            run = 0
+    return None
+
+
+def check_dock_scroll(directory):
+    berth = wait_screen(directory, "berth", lambda f: at_port(f) and dock_button(f, 0))
+    w, h = berth.size
+    left, right = h * .056, w - h * .70
+    width = (right - left) / 5
+    back_x, nav_y = dock_button(berth, 0)
+    for index, name in ((2, "shipyard"), (3, "refit")):
+        shell("input", "tap", round(left + (index + .5) * width), nav_y)
+        # The touched button briefly paints its pressed style before the deferred
+        # mobile callback replaces the old page and clears the berth highlight.
+        selected = lambda f: at_port(f) and dock_button(f, index) and not dock_button(f, 0)
+        before = wait_screen(directory, name, selected)
+        x = round(left + .36 * (right - left))
+        shell("input", "swipe", x, nav_y - round(h * .27), x, round(h * .27), 450)
+        time.sleep(.7)
+        after = screenshot(directory, name + "-scrolled")
+        assert selected(after), f"Lost the fixed navigation while scrolling {name}"
+        box = (round(left), round(h * .32), round(right), round(h * .73))
+        delta = ImageChops.difference(before.crop(box), after.crop(box))
+        assert max(ImageStat.Stat(delta).mean) > 4, f"{name} details did not scroll"
+        if index == 2:
+            catalogue = (round(w - h * .55), round(h * .34), round(w - h * .08), round(h * .68))
+            assert before.crop(catalogue).tobytes() == after.crop(catalogue).tobytes(), "Touch drag selected a different ship class"
+            shell("input", "keyevent", 4)
+        else:
+            shell("input", "tap", back_x, nav_y)
+        wait_screen(directory, name + "-returned", lambda f: at_port(f) and dock_button(f, 0) and not dock_button(f, index))
+    print("Shipyard and refit details scrolled; Android Back and the fixed berth button both returned to port", flush=True)
+
+
 def check_market_scroll(directory, w, h):
     # Open the warehouse from the station briefing.
     shell("input", "tap", w - round(h * .56), round(h * .31))
@@ -167,7 +215,16 @@ def check_market_scroll(directory, w, h):
     x = w - round(h * .08)
     shell("input", "swipe", x, round(h * .75), x, round(h * .25), 450)
     wait_screen(directory, "warehouse-swiped", lambda frame: at_port(frame) and .30 < thumb_top(frame, .043) < .80)
-    shell("input", "swipe", x, round(h * .31), x, round(h * .91), 450)
+    # A fast swipe can carry the list to the final contract rows. Return the
+    # remaining distance with real swipes, checking that the list moves back.
+    for attempt in range(5):
+        before = screenshot(directory, "warehouse-return-start")
+        if at_top(before):
+            break
+        shell("input", "swipe", x, round(h * .30), x, round(h * .91), 450)
+        time.sleep(.7)
+        after = screenshot(directory, f"warehouse-return-{attempt + 1}")
+        assert at_port(after) and (at_top(after) or thumb_top(after, .043) < thumb_top(before, .043)), "Warehouse return drag did not scroll towards the top"
     wait_screen(directory, "warehouse-restored", at_top)
     shell("input", "tap", x, round(h * .75))
     # The quick quote dialog covers the HUD and draws its top border at 14.5% height.
@@ -219,6 +276,7 @@ def exercise(tag, candidate):
             pid = shell("pidof", PACKAGE)
             shell("input", "tap", *primary_button(image))
             observe_port(directory, "continued-campaign", pid)
+            check_dock_scroll(directory)
             check_market_scroll(directory, w, h)
     finally:
         logs = adb("logcat", "-d")

@@ -4,11 +4,11 @@
 
 《星轨遗产》是一款中文单人太空沙盒。你亲自驾驶旗舰，也要为燃料、货物和下一艘船付钱。等这一代船长老去，子女还能接过家业，在同一个星区继续生活。
 
-[下载 Windows 64 位试玩版 0.1.8（ZIP）](https://github.com/malemeng/starrail-legacy/releases/download/android-0.1.8/StarrailLegacy-Windows-x64.zip) · 完整解压，保留同目录的 `fleet_collision.dll`，双击 `StarrailLegacy.exe` 即可离线游玩。
+[下载 Windows 64 位试玩版 0.1.9（ZIP）](https://github.com/malemeng/starrail-legacy/releases/download/android-0.1.9/StarrailLegacy-Windows-x64.zip) · 完整解压，保留同目录的 `fleet_collision.dll`，双击 `StarrailLegacy.exe` 即可离线游玩。
 
-[下载安卓横屏试玩版 0.1.8（APK）](https://github.com/malemeng/starrail-legacy/releases/download/android-0.1.8/StarrailLegacy-Android.apk) · 适用于 Android 7.0 及以上的 ARM64 手机，支持触屏驾驶、外部模型托管和多 Agent 竞技场。列表支持从按钮和下拉选项上起手滑动，轻点即可操作。
+[下载安卓横屏试玩版 0.1.9（APK）](https://github.com/malemeng/starrail-legacy/releases/download/android-0.1.9/StarrailLegacy-Android.apk) · 适用于 Android 7.0 及以上的 ARM64 手机，支持触屏驾驶、外部模型托管和多 Agent 竞技场。在船坞，左侧上下滑动可查看报价和购买按钮，右侧独立浏览舰船。点底部「返回泊位」或按安卓返回键即可回到港口。
 
-安卓 0.1.8 沿用 0.1.7、0.1.6 和 0.1.3 的正式签名，可从这些版本覆盖升级。0.1.4 和 0.1.5 使用另一份签名，安卓会拒绝覆盖安装。卸载会清除应用内存档，有进度需要保留的玩家请保留原安装。
+安卓 0.1.9 沿用 0.1.8、0.1.7、0.1.6 和 0.1.3 的正式签名，可从这些版本覆盖升级。0.1.4 和 0.1.5 使用另一份签名，安卓会拒绝覆盖安装。卸载会清除应用内存档，有进度需要保留的玩家请保留原安装。
 
 从主菜单进入「战斗沙盘」，在舰船图鉴中按外形点选，也可按舰级筛选、按舰名或型号搜索。设置数量后点「加入蓝方」或「加入红方」。航母可以更换可配置机库的联队，每方还可部署一座采矿站、船厂或防务站。开战后，点战场中的舰船或从「视角」名单选定船号即可锁定跟随；滚轮、双指和「＋／−」均可缩放，「全景」恢复总览。也可以暂停、调速、跟拍战机、同阵容重赛或返回调阵。胜负判定后战场时钟继续运行，战机可以返航；只有手动暂停才会停表。沙盘独立运行，战损只计入本场。
 

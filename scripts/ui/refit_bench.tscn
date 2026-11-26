@@ -2,14 +2,14 @@
 
 [ext_resource type="Script" path="res://scripts/ui/refit_blueprint.gd" id="1"]
 
-[node name="RefitBench" type="HBoxContainer"]
+[node name="RefitBench" type="BoxContainer"]
 theme_override_constants/separation = 14
 
 [node name="Plan" type="VBoxContainer" parent="."]
 size_flags_horizontal = 3
 size_flags_stretch_ratio = 0.8
 
-[node name="Blueprint" type="Control" parent="Plan"]
+[node name="Blueprint" type="BaseButton" parent="Plan"]
 clip_contents = true
 custom_minimum_size = Vector2(246, 228)
 size_flags_vertical = 3

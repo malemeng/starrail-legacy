@@ -1,4 +1,4 @@
-extends Control
+extends BaseButton
 
 signal class_selected(kind: int)
 
@@ -7,6 +7,7 @@ const Pixels = preload("res://art/pixel_art.gd")
 const GRID := 25.0
 
 var selected_kind := -1
+var touch_selection := false
 var hovered_col := -1
 var vessels := []
 var textures := []
@@ -34,7 +35,8 @@ func configure(kind: int) -> void:
 		outlines.append(dimensions(index))
 	custom_minimum_size = Vector2(400, 176)
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	mouse_filter = Control.MOUSE_FILTER_STOP
+	mouse_filter = Control.MOUSE_FILTER_PASS
+	focus_mode = Control.FOCUS_NONE
 	if not mouse_exited.is_connected(_on_mouse_exited):
 		mouse_exited.connect(_on_mouse_exited)
 	queue_redraw()
@@ -55,7 +57,7 @@ func _col_at(pos: Vector2) -> int:
 func _gui_input(event: InputEvent) -> void:
 	if vessels.is_empty():
 		return
-	if event is InputEventMouseMotion:
+	if event is InputEventMouseMotion and not touch_selection:
 		var idx := _col_at(event.position)
 		if idx != hovered_col:
 			hovered_col = idx
@@ -66,10 +68,16 @@ func _gui_input(event: InputEvent) -> void:
 			else:
 				tooltip_text = ""
 			queue_redraw()
-	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+	elif not touch_selection and event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		var idx := _col_at(event.position)
 		if idx >= 0 and idx < vessels.size():
 			accept_event()
+			class_selected.emit(vessels[idx])
+
+func _pressed() -> void:
+	if touch_selection:
+		var idx := _col_at(get_local_mouse_position())
+		if idx >= 0:
 			class_selected.emit(vessels[idx])
 
 func _draw_brackets(rect: Rect2, color: Color, arm: float = 7.0) -> void:

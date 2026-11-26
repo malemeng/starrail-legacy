@@ -1,4 +1,4 @@
-extends Control
+extends BaseButton
 
 signal selected(slot: int)
 signal inspected(slot: int)
@@ -11,11 +11,13 @@ const SIZES := ["","小 S","中 M","大 L"]
 
 var kind := 0
 var active := 0
+var touch_selection := false
 var hovered := -1
 var texture: Texture2D
 var loadout: Array = []
 
 func _ready() -> void:
+	focus_mode = Control.FOCUS_NONE
 	mouse_exited.connect(set_hover.bind(-1))
 
 func configure(model: int, slot: int, weapons: Array = []) -> void:
@@ -134,10 +136,16 @@ func _draw() -> void:
 func _gui_input(event: InputEvent) -> void:
 	if texture == null:
 		return
-	if event is InputEventMouseMotion:
+	if event is InputEventMouseMotion and not touch_selection:
 		set_hover(hit_slot(event.position))
-	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+	elif not touch_selection and event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		var index := hit_slot(event.position)
 		if index >= 0:
 			accept_event()
+			selected.emit(index)
+
+func _pressed() -> void:
+	if touch_selection:
+		var index := hit_slot(get_local_mouse_position())
+		if index >= 0:
 			selected.emit(index)

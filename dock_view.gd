@@ -25,6 +25,7 @@ var topic := ""
 var station_id := 0
 var stage: Control
 var rendered := ""
+var rendered_model := -1
 var backdrop := -1
 var blueprint: Blueprint
 
@@ -38,6 +39,7 @@ func reset() -> void:
 	topic = ""
 	station_id = 0
 	rendered = ""
+	rendered_model = -1
 	backdrop = -1
 
 func refit_candidates(world, port_id: int) -> Array:
@@ -63,13 +65,18 @@ func resolved_refit_ship(world, port_id: int) -> Dictionary:
 	refit_ship_id = candidates[0].id
 	return candidates[0]
 
+func open_section(key: String) -> void:
+	mode = key
+	topic = ""
+	game.tab = "港口"
+	game.refresh()
+
 func section(key: String, caption: String, row: Control) -> void:
-	var entry: Button = game.button(row, caption, func():
-		mode = key
-		topic = ""
-		game.refresh(), true, true)
+	var entry: Button = game.button(row, caption, open_section.bind(key), true, true)
 	entry.toggle_mode = true
 	entry.button_pressed = mode == key
+	if game.mobile_play:
+		entry.custom_minimum_size.y = 60
 
 func sync() -> bool:
 	var world = game.world
@@ -87,7 +94,11 @@ func sync() -> bool:
 	return true
 
 func paint(station: Dictionary) -> void:
+	var scroll: ScrollContainer = stage.get_node("Margins/Content/Scroll")
+	if rendered != mode or (mode == "yard" and rendered_model != model_id):
+		scroll.scroll_vertical = 0
 	rendered = mode
+	rendered_model = model_id
 	var world = game.world
 	var variant := 0 if station.id == Story.origin(world) else (1 if station.module in [0, 1] else 2)
 	var background: Control = stage.get_node("Background")
@@ -97,7 +108,7 @@ func paint(station: Dictionary) -> void:
 		Art.fade(background, Color("08101c", 0.40), Color("08101c", 0.0))
 		Art.fade(background, Color("08101c", 0.0), Color("08101c", 0.97), true)
 		backdrop = variant
-	var flow: VBoxContainer = stage.get_node("Margins/Content")
+	var flow: VBoxContainer = scroll.get_node("Body")
 	game.clear(flow)
 	var air := Control.new()
 	air.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -135,8 +146,9 @@ func paint(station: Dictionary) -> void:
 		game.title(flow, description, 17, Color("dee5e1"), true)
 		if mode == "welcome" and not station.has("planet_index"):
 			game.button(flow,"空间站布局",func(): StationDesigner.open(game,"layout",station))
-	var places = game.hbox(flow)
-	section("welcome", "泊位", places)
+	var places: HBoxContainer = stage.get_node("Margins/Content/Places")
+	game.clear(places)
+	section("welcome", "返回泊位" if game.mobile_play and mode != "welcome" else "泊位", places)
 	if station.get("landing_only",false) or station.build > 0:
 		return
 	section("market", "货栈", places)
@@ -174,8 +186,11 @@ func show_refit(flow: Control, station: Dictionary) -> void:
 	if slot_index >= spec.slots.size():
 		slot_index = 0
 	var bench := RefitBench.instantiate()
+	if game.mobile_play:
+		bench.vertical = true
 	flow.add_child(bench)
 	var diagram: Blueprint = bench.get_node("Plan/Blueprint")
+	diagram.touch_selection = game.mobile_play
 	blueprint = diagram
 	diagram.configure(vessel.kind,slot_index,vessel.fit.weapons)
 	diagram.selected.connect(func(index: int): slot_index = index; game.refresh())
@@ -237,12 +252,13 @@ func show_hull(flow: Control, station: Dictionary) -> void:
 	var invoice := Economy.ship_quote(station, model_id)
 	var chart := HullScale.new()
 	chart.configure(model_id)
+	chart.touch_selection = game.mobile_play
 	chart.class_selected.connect(func(kind: int):
 		model_id = kind
 		game.refresh())
 	flow.add_child(chart)
 
-	var row: HBoxContainer = game.hbox(flow)
+	var row: BoxContainer = game.vbox(flow) if game.mobile_play else game.hbox(flow)
 	row.add_theme_constant_override("separation", 10)
 
 	# Left: Tactical Blueprint & Mount Legend
@@ -252,6 +268,8 @@ func show_hull(flow: Control, station: Dictionary) -> void:
 	preview_panel.custom_minimum_size.x = 264
 	game.title(preview_card, "战术蓝图与出厂武备", 13, UIKit.CYAN)
 	var diagram := Blueprint.new()
+	if game.mobile_play:
+		diagram.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	diagram.custom_minimum_size = Vector2(240, 184)
 	diagram.configure(model_id, -1, Hulls.stock_fit(model_id).weapons)
 	preview_card.add_child(diagram)
@@ -269,6 +287,9 @@ func show_hull(flow: Control, station: Dictionary) -> void:
 
 	# Right: Ship Dossier & Procurement
 	var spec := UIKit.card(row, UIKit.GOLD)
+	if game.mobile_play:
+		row.move_child(spec.get_parent(), 0)
+		preview_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var hdr: HBoxContainer = game.hbox(spec)
 	var title_lbl: Label = game.title(hdr, model.name, 20, Color("eef1e9"))
 	title_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -396,9 +417,9 @@ func sidebar(body: Node, station: Dictionary) -> void:
 			game.hud.result(n > 0, "已为 %d 艘停泊舰船完成维修与加注燃料。" % n, "全队已满血满油，或资金/站点库存不足。"),
 			"primary", bool(q.needs_service), "所有停泊舰船均已满船体与满燃料", true)
 		var nav_row: HBoxContainer = game.hbox(qcard)
-		UIKit.action_button(nav_row, "货栈", func(): mode = "market"; game.refresh(), "ghost", true, "", true)
-		UIKit.action_button(nav_row, "船坞", func(): mode = "yard"; game.refresh(), "ghost", true, "", true)
-		UIKit.action_button(nav_row, "改装", func(): mode = "refit"; game.refresh(), "ghost", true, "", true)
+		UIKit.action_button(nav_row, "货栈", open_section.bind("market"), "ghost", true, "", true)
+		UIKit.action_button(nav_row, "船坞", open_section.bind("yard"), "ghost", true, "", true)
+		UIKit.action_button(nav_row, "改装", open_section.bind("refit"), "ghost", true, "", true)
 		if station.build == 0 and not station.get("landing_only",false):
 			UIKit.action_button(nav_row,"模块武备",func(): preload("res://scripts/ui/station_armory.gd").open(game,station),"ghost")
 		UIKit.action_button(nav_row, game.key_caption("离港","E"), game.flight.dock, "default", not vessel.is_empty(), "未登舰", true)

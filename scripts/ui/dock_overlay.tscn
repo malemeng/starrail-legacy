@@ -21,3 +21,13 @@ theme_override_constants/margin_top = 27
 theme_override_constants/margin_bottom = 27
 
 [node name="Content" type="VBoxContainer" parent="Margins"]
+
+[node name="Scroll" type="ScrollContainer" parent="Margins/Content"]
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="Body" type="VBoxContainer" parent="Margins/Content/Scroll"]
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Places" type="HBoxContainer" parent="Margins/Content"]

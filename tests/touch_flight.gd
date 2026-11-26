@@ -20,6 +20,47 @@ func touch(deck: Control, index: int, point: Vector2, pressed: bool) -> bool:
 func _initialize() -> void:
 	run.call_deferred()
 
+func check_dock_navigation(game) -> void:
+	var dock = game.dock_view
+	var details: ScrollContainer = dock.stage.get_node("Margins/Content/Scroll")
+	var menu: HBoxContainer = dock.stage.get_node("Margins/Content/Places")
+	var list: ScrollContainer = game.side_panel.get_node("Column/Scroll")
+	game.tab = "资产"
+	game.refresh()
+	menu.get_child(2).pressed.emit()
+	await process_frame
+	await process_frame
+	check(game.tab == "港口" and dock.rendered == "yard", "dock navigation returns from assets to the ship catalogue")
+	for section in ["yard", "refit", "market", "people"]:
+		dock.mode = section
+		game.refresh()
+		await process_frame
+		await process_frame
+		var back: Button = menu.get_child(0)
+		check(back.text == "返回泊位" and dock.stage.get_global_rect().encloses(back.get_global_rect()),
+			"berth navigation fits within the dock in " + section)
+		if section == "yard":
+			var original_y := back.global_position.y
+			details.scroll_vertical = 250
+			list.scroll_vertical = 180
+			var detail_position := details.scroll_vertical
+			var list_position := list.scroll_vertical
+			game.refresh()
+			await process_frame
+			await process_frame
+			check(detail_position > 0 and details.scroll_vertical == detail_position and menu.get_child(0).global_position.y == original_y,
+				"ship quote scrolls independently and keeps its position across refresh")
+			check(list_position > 0 and list.scroll_vertical == list_position, "ship catalogue scrolls independently")
+			back = menu.get_child(0)
+		if section in ["yard", "market"]:
+			game._notification(Node.NOTIFICATION_WM_GO_BACK_REQUEST)
+		else:
+			back.pressed.emit()
+		await process_frame
+		await process_frame
+		check(dock.mode == "welcome" and game.playing and details.scroll_vertical == 0 and list.scroll_vertical == 0,
+			"return from " + section + " restores the berth and its own list position")
+
 func run() -> void:
 	var game = Game.instantiate()
 	game.mobile_play = true
@@ -43,6 +84,7 @@ func run() -> void:
 	game.set_physics_process(false)
 	var deck = game.touch_deck
 	check(not deck.visible and not game.side_collapsed,"port opens with touch-accessible management panel")
+	await check_dock_navigation(game)
 	game.flight.dock()
 	await process_frame
 	await process_frame

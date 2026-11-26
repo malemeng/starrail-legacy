@@ -12,10 +12,9 @@ const CARD_BG := Color(0.0588, 0.1059, 0.1686, 0.92)
 const CARD_BORDER := Color(0.1804, 0.3059, 0.4157, 0.85)
 const SUBCARD_BG := Color(0.0392, 0.0745, 0.1255, 0.90)
 
-## Persistent UI state across panel refreshes (scroll positions, fold states, choice selections).
+## Persistent fold states and selections across panel refreshes.
 static var folded: Dictionary = {}
 static var choices: Dictionary = {}
-static var scroll_pos: Dictionary = {}
 
 static func tone_color(tone: String) -> Color:
 	match tone:
@@ -149,6 +148,7 @@ static func meter(parent: Node, label_text: String, value: float, max_value: flo
 	lbl.add_theme_color_override("font_color", DIM)
 	row.add_child(lbl)
 	var bar := ProgressBar.new()
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar.min_value = 0.0
 	bar.max_value = maxf(1.0, max_value)
 	bar.value = clampf(value, 0.0, bar.max_value)
